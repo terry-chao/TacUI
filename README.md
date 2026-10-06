@@ -59,7 +59,13 @@ image; only the host language differs.
 
 The basic control set is implemented: label, button (four styles), checkbox,
 radio, switch, slider, progress bar, divider, panel, list item, tabs and text
-input. Each one is a **function**, not a class, and none of them tracks its own
+input — plus `scrollView` / `scrollBar` / `listView`, which are built on three
+mechanisms that had to land first: **clipping** (`Builder::clip` gives paint and
+hit testing the same rectangle), **event bubbling** (the hit chain stops at the
+first node that consumes the event) and **virtualisation** (a list of ten
+thousand costs the same as a list of ten).
+
+Each control is a **function**, not a class, and none of them tracks its own
 hover/press/focus state — the input system owns that, so the region that lights
 up is by construction the region that responds.
 
@@ -77,7 +83,7 @@ Colours, radii and type sizes come from
 [`Theme`](include/tacui/theme.hpp) tokens rather
 than literals, so a skin is one struct. See
 [docs/controls.md](docs/controls.md), and run `controls_gallery` — it is both
-the gallery and the test (`--input-test` is 27 assertions, no window, no GPU).
+the gallery and the test (`--input-test` is 39 assertions, no window, no GPU).
 
 ```cpp
 ui::VNode* buildUi(ui::Builder& b, App& app) {

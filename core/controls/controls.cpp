@@ -483,6 +483,127 @@ void tabs(Builder& b, Key firstKey, Rect box, const TabsProps& p, IndexFn onSele
 }
 
 // ---------------------------------------------------------------------------
+// Scroll view / scroll bar
+// ---------------------------------------------------------------------------
+
+namespace {
+
+float maxScroll(float contentHeight, float viewportHeight) {
+    return std::max(0.0f, contentHeight - viewportHeight);
+}
+
+} // namespace
+
+Scope scrollView(Builder& b, Key key, Rect box, ScrollViewState& state,
+                 const ScrollViewProps& p) {
+    Ui* uiPtr = &b.ui();
+    const float maxOff = maxScroll(p.contentHeight, box.h);
+    state.offset = clampf(state.offset, 0.0f, maxOff);
+
+    NodeBehavior nb;
+    nb.interactive = true;
+    nb.onWheel = [&state, maxOff, step = p.lineStep, uiPtr](float lines) {
+        const float next = clampf(state.offset - lines * step, 0.0f, maxOff);
+        // At the end of the range, decline so an ancestor scroll view can take
+        // the gesture instead of the scroll dead-ending here.
+        if (next == state.offset) return false;
+        state.offset = next;
+        uiPtr->invalidate();
+        return true;
+    };
+    b.behavior(key, std::move(nb));
+
+    return b.clip(box, key);
+}
+
+void scrollBar(Builder& b, Key key, Rect box, float& offset,
+               const ScrollBarProps& p) {
+    const Theme& t  = b.ui().theme();
+    Ui*          ui = &b.ui();
+    const float  maxOff = maxScroll(p.contentHeight, box.h);
+    if (maxOff <= 0.0f) return;   // nothing overflows: no bar, no behaviour
+
+    const float thumbH = clampf(box.h * box.h / std::max(p.contentHeight, 1.0f),
+                                std::min(p.minThumb, box.h), box.h);
+    const float travel = std::max(box.h - thumbH, 1.0f);
+    const float t01    = offset / maxOff;
+
+    const Rect track{ box.right() - p.width, box.y, p.width, box.h };
+    const Rect thumb{ track.x, box.y + t01 * travel, track.w, thumbH };
+    const float radius = p.width * 0.5f;
+
+    // Same trick as the slider: the key sits on a hit rect covering the whole
+    // track, so grabbing anywhere on the bar works, not just the thumb.
+    hitRect(b, track, key, radius);
+    rect(b, track, radius, t.surfaceAlt);
+    rect(b, thumb, radius, ui->isCaptured(key) ? t.accentHover : t.textFaint);
+
+    NodeBehavior nb;
+    nb.interactive = true;
+    nb.onDrag = [box, thumbH, travel, maxOff, &offset, ui](float, float y) {
+        const float local = clampf((y - box.y - thumbH * 0.5f) / travel, 0.0f, 1.0f);
+        offset = local * maxOff;
+        ui->invalidate();
+    };
+    b.behavior(key, std::move(nb));
+}
+
+// ---------------------------------------------------------------------------
+// List view
+// ---------------------------------------------------------------------------
+
+void listView(Builder& b, Key key, Rect box, const ListViewProps& p,
+              ListViewState& state, SelectFn onSelect) {
+    if (!p.labels || p.count <= 0) return;
+
+    const Theme& t     = b.ui().theme();
+    Ui*          ui    = &b.ui();
+    const float  pitch = p.rowHeight + p.rowGap;
+    const float  contentH = static_cast<float>(p.count) * pitch;
+    const float  maxOff = maxScroll(contentH, box.h);
+    const bool   bar    = p.showBar && maxOff > 0.0f;
+
+    state.offset = clampf(state.offset, 0.0f, maxOff);
+
+    NodeBehavior nb;
+    nb.interactive = true;
+    nb.onWheel = [&state, maxOff, pitch, ui](float lines) {
+        const float next = clampf(state.offset - lines * pitch, 0.0f, maxOff);
+        if (next == state.offset) return false;
+        state.offset = next;
+        ui->invalidate();
+        return true;
+    };
+    b.behavior(key, std::move(nb));
+
+    const Key   rowBase = p.rowKeyBase ? p.rowKeyBase : key + 2;
+    const float rowW    = box.w - (bar ? t.spaceMd : 0.0f);
+
+    // Virtualisation: only the rows that intersect the viewport are emitted at
+    // all, so the node count is bounded by the box, not by `count`.
+    const int first = static_cast<int>(std::floor(state.offset / pitch));
+    const int last  = static_cast<int>(std::floor((state.offset + box.h) / pitch));
+
+    {
+        auto inner = b.clip(box, key);
+        for (int i = std::max(first, 0); i <= last && i < p.count; ++i) {
+            const float y = box.y + static_cast<float>(i) * pitch - state.offset;
+            const char* sec = (p.secondary && p.secondary[i]) ? p.secondary[i] : "";
+            listItem(b, rowBase + static_cast<Key>(i),
+                     { box.x, y, rowW, p.rowHeight },
+                     { .label = p.labels[i], .secondary = sec,
+                       .selected = (i == p.selected) },
+                     onSelect ? ClickFn{ [onSelect, i] { onSelect(i); } } : ClickFn{});
+        }
+    }
+
+    // Emitted after the clip scope closed, so the content cannot paint over it.
+    if (bar) {
+        scrollBar(b, key + 1, box, state.offset, { .contentHeight = contentH });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Text input
 // ---------------------------------------------------------------------------
 

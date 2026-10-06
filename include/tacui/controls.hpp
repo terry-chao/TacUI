@@ -36,6 +36,7 @@ using BoolFn  = std::function<void(bool)>;
 using FloatFn = std::function<void(float)>;
 using IndexFn = std::function<void(int)>;
 using TextFn  = std::function<void(const std::string&)>;
+using SelectFn = std::function<void(int)>;   // list selection
 
 // `alpha == 0` means "unset — take it from the Theme".
 constexpr Color kUnset = Color{ 0.0f, 0.0f, 0.0f, 0.0f };
@@ -122,6 +123,42 @@ struct TabsProps {
     int                selected = 0;
 };
 
+struct ScrollViewProps {
+    // Total height of the content the caller is going to emit. The control
+    // needs it to clamp the offset and size the thumb; it cannot measure the
+    // children, because there is no layout engine yet.
+    float contentHeight = 0.0f;
+    float lineStep      = 48.0f;   // pixels per wheel notch
+};
+
+struct ScrollViewState {
+    float offset = 0.0f;
+};
+
+struct ScrollBarProps {
+    float contentHeight = 0.0f;
+    float width         = 8.0f;
+    float minThumb      = 28.0f;
+};
+
+struct ListViewProps {
+    const char* const* labels    = nullptr;
+    const char* const* secondary = nullptr;   // may be null
+    int   count       = 0;
+    int   selected    = -1;
+    float rowHeight   = 30.0f;
+    float rowGap      = 2.0f;
+    bool  showBar     = true;
+
+    // Rows use `rowKeyBase + i`; 0 means `key + 2`. See the key-range note on
+    // listView() below.
+    Key rowKeyBase = 0;
+};
+
+struct ListViewState {
+    float offset = 0.0f;
+};
+
 struct TextInputProps {
     const char* placeholder = "";
     const char* suffix      = "";    // drawn right-aligned, dimmed
@@ -191,6 +228,36 @@ void listItem(Builder& b, Key key, Rect box, const ListItemProps& props,
 
 void tabs(Builder& b, Key firstKey, Rect box, const TabsProps& props,
           IndexFn onSelect = {});
+
+// Scrollable region. Returns the clip scope that owns the content, so:
+//
+//     ui::ScrollViewState sv;
+//     {
+//         auto view = ui::scrollView(b, kScroll, box, sv, { .contentHeight = h });
+//         // emit children at box.y - sv.offset
+//     }
+//     ui::scrollBar(b, kScrollBar, box, sv, { .contentHeight = h });
+//
+// The wheel bubbles: if this view is already at the end it declines, and the
+// gesture goes to an ancestor scroll view instead.
+[[nodiscard]] Scope scrollView(Builder& b, Key key, Rect box,
+                               ScrollViewState& state,
+                               const ScrollViewProps& props = {});
+
+// The thumb, drawn outside the clip so the content cannot cover it. Takes the
+// offset by reference rather than a ScrollViewState, so a list view can share
+// it without a second state type.
+void scrollBar(Builder& b, Key key, Rect box, float& offset,
+               const ScrollBarProps& props = {});
+
+// Virtualised list: only the rows intersecting the viewport are emitted, so a
+// list of ten thousand costs the same as a list of ten.
+//
+// Composite controls own a contiguous key range (same convention as tabs):
+// `key` is the container (wheel), `key + 1` the scrollbar thumb, and
+// `key + 2 + i` row i — or `rowKeyBase + i` when that is set.
+void listView(Builder& b, Key key, Rect box, const ListViewProps& props,
+              ListViewState& state, SelectFn onSelect = {});
 
 void textInput(Builder& b, Key key, Rect box, const TextInputProps& props,
                TextInputState& state, TextFn onChange = {});

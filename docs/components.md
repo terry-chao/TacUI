@@ -77,11 +77,13 @@ b.behavior(key, ui::NodeBehavior{
 | **捕获 / 拖出取消** | MouseDown 记下 `pressedKey_`；MouseUp 时只有命中同一个 key 才算点击。**拖拽捕获**：登记了 `onDrag` 的节点在按下时拿走捕获，松开前一直收 MouseMove —— 滑块靠它实现 |
 | **焦点** | 属于 Element（跨帧稳定），按树序做 Tab 顺序；点击可聚焦节点夺焦（与桌面工具一致）。节点消失时才清焦点 |
 
-**尚未实现：事件冒泡。** 现在命中测试直接返回最上层可交互节点，不向父节点回溯。做嵌套交互控件（List 行里的按钮）时需要补上。
+**已实现：事件冒泡。** 命中测试现在返回一条**链**（最上层节点 → 可交互祖先），事件沿链传播直到被消费。行里的按钮先拿到点击，行不会跟着被选中；滚轮在行上没人处理时冒泡到列表容器 —— 这正是嵌套交互要的语义。
 
 **已实现：字符输入。** `WM_CHAR` 在 `platform/windows/win32_window.cpp` 里转发成 `KeyCode::Character`，TextInput 靠它编辑。IME 组合仍是空白。
 
-**尚未实现：裁剪。** 渲染器还没有 clip，所以 `ScrollView` / `ListView` 排在这一项之后。
+**已实现：裁剪。** `Builder::clip()` 打开一个裁剪容器，**绘制与命中测试共用同一个矩形**；`rhi::ClipRect` 随图元带到着色器里做 scissor。ScrollView / ListView 建立在这一层之上。
+
+**尚未实现：布局。** 控件仍由调用方给绝对盒 —— M2 的 Measure / Arrange。
 
 ---
 
@@ -244,7 +246,7 @@ struct Theme {
 | **3** | **Button + Label + Checkbox** | ✅ 已做，且一次铺满 12 个 L2 | 三个最简单的 L2，用来验证整个模型是否成立 |
 | **4** | **把例子改成用组件** | 🟡 新增 `controls_gallery` 作验收；`asset_browser` 仍是手写 | 例子是验收标准 |
 | **5** | **TextInput** | 🟡 编辑 / 选区 / 光标已通；缓冲仍在宿主侧，未搬进 Element | 第一个真图元，验证「core 侧状态」这条路 |
-| **6** | **ScrollView + ListView（L1）** | ⬜ 缺裁剪 | 虚拟化，游戏工具链的刚需 |
+| **6** | **ScrollView + ListView（L1）** | ✅ 已做：裁剪 + 滚轮冒泡 + 虚拟化 | 虚拟化，游戏工具链的刚需 |
 | 7 | 其余 L2 铺开 | ⬜ | 到这一步就是体力活了 |
 
 ### 第 1 步做完了，实际结果是：

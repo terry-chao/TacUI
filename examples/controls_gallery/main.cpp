@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <tacui/tacui.hpp>
 
@@ -54,6 +55,13 @@ constexpr ui::Key kPanelMid   = 71;
 constexpr ui::Key kPanelRight = 72;
 constexpr ui::Key kPanelText  = 73;
 constexpr ui::Key kPanelTabs  = 74;
+constexpr ui::Key kPanelScroll = 75;
+constexpr ui::Key kPanelList   = 76;
+
+constexpr ui::Key kScroll    = 80;
+constexpr ui::Key kScrollBar = 81;
+constexpr ui::Key kList      = 90;
+constexpr ui::Key kListRow   = 100;   // rows are kListRow + i
 
 // --- layout ----------------------------------------------------------------
 // Absolute, because M2's Measure/Arrange does not exist yet. Controls take a
@@ -77,8 +85,16 @@ constexpr Rect kBoxSlider  { 612.0f, 214.0f, 238.0f, 24.0f };
 constexpr Rect kBoxTabs  { 612.0f, 374.0f, 238.0f, 32.0f };
 constexpr Rect kBoxInput { 40.0f, 386.0f, 420.0f, 36.0f };
 
+constexpr Rect kBoxScroll { 40.0f, 500.0f, 368.0f, 168.0f };
+constexpr Rect kBoxList   { 456.0f, 500.0f, 394.0f, 168.0f };
+
 constexpr int kTabCount   = 3;
 constexpr int kRadioCount = 3;
+constexpr int kListCount  = 40;
+
+constexpr float kScrollRowH     = 28.0f;
+constexpr int   kScrollRowCount = 12;
+constexpr float kScrollContent  = kScrollRowH * static_cast<float>(kScrollRowCount);
 
 const char* const kTabs[kTabCount]     = { "Diff", "Scene", "Render" };
 const char* const kRadios[kRadioCount] = { "Vertex", "Edge", "Face" };
@@ -99,7 +115,12 @@ struct App {
     int   tab       = 0;
 
     ui::TextInputState input;
+    ui::ScrollViewState scroll;
+    ui::ListViewState   list;
+    int                 listSelected = 3;
 
+    std::vector<std::string> rowLabels;
+    std::vector<const char*> rowPtrs;
     double lastReport = 0.0;
 };
 
@@ -226,14 +247,64 @@ ui::VNode* buildUi(ui::Builder& b, App& app) {
                   { .text = info, .size = 12.0f });
     }
 
-    char status[160];
+    // ---- scroll view -----------------------------------------------------
+    {
+        auto card = ui::panel(b, kPanelScroll, { 24.0f, 466.0f, 400.0f, 204.0f });
+        ui::label(b, 0, { 40.0f, 476.0f, 200.0f, 20.0f },
+                  { .text = "SCROLL VIEW", .size = 11.0f, .strong = true });
+        ui::label(b, 0, { 200.0f, 476.0f, 210.0f, 20.0f },
+                  { .text = "wheel or drag the bar", .size = 11.0f });
+
+        {
+            auto view = ui::scrollView(b, kScroll, kBoxScroll, app.scroll,
+                                       { .contentHeight = kScrollContent,
+                                         .lineStep = 40.0f });
+            char line[64];
+            for (int i = 0; i < kScrollRowCount; ++i) {
+                const float y = kBoxScroll.y + static_cast<float>(i) * kScrollRowH
+                                - app.scroll.offset;
+                std::snprintf(line, sizeof line, "Row %02d", i);
+                ui::label(b, 0, { kBoxScroll.x + 12.0f, y + 4.0f, 200.0f, 18.0f },
+                          { .text = line });
+                ui::label(b, 0, { kBoxScroll.x + 92.0f, y + 4.0f, 240.0f, 18.0f },
+                          { .text = "clipped to the viewport", .size = 12.0f });
+                ui::divider(b, 0, { kBoxScroll.x + 12.0f, y + kScrollRowH - 2.0f,
+                                    324.0f, 1.0f });
+            }
+        }
+        ui::scrollBar(b, kScrollBar, kBoxScroll, app.scroll.offset,
+                      { .contentHeight = kScrollContent });
+    }
+
+    // ---- list view -------------------------------------------------------
+    {
+        auto card = ui::panel(b, kPanelList, { 440.0f, 466.0f, 426.0f, 204.0f });
+        ui::label(b, 0, { 456.0f, 476.0f, 200.0f, 20.0f },
+                  { .text = "LIST VIEW", .size = 11.0f, .strong = true });
+
+        char sub[64];
+        std::snprintf(sub, sizeof sub, "%d items, only visible rows exist", kListCount);
+        ui::label(b, 0, { 556.0f, 476.0f, 294.0f, 20.0f },
+                  { .text = sub, .size = 11.0f });
+
+        ui::listView(b, kList, kBoxList,
+                     { .labels = app.rowPtrs.data(), .count = kListCount,
+                       .selected = app.listSelected,
+                       .rowHeight = 28.0f, .rowGap = 2.0f,
+                       .rowKeyBase = kListRow },
+                     app.list,
+                     [&app](int i) { app.listSelected = i; app.ui->invalidate(); });
+    }
+
+    char status[192];
     std::snprintf(status, sizeof status,
-                  "clicks %d - snap %s - mode %s - wireframe %s - tab %s",
+                  "clicks %d - snap %s - mode %s - wireframe %s - tab %s - list row %d",
                   app.clicks, app.checkA ? "on" : "off",
                   kRadios[std::clamp(app.radio, 0, kRadioCount - 1)],
                   app.switchA ? "on" : "off",
-                  kTabs[std::clamp(app.tab, 0, kTabCount - 1)]);
-    ui::label(b, 0, { 24.0f, 464.0f, 840.0f, 20.0f },
+                  kTabs[std::clamp(app.tab, 0, kTabCount - 1)],
+                  app.listSelected);
+    ui::label(b, 0, { 24.0f, 682.0f, 840.0f, 20.0f },
               { .text = status, .size = 12.0f });
 
     return b.root();
@@ -277,6 +348,36 @@ ui::InputEvent typed(uint32_t cp) {
 
 float centreX(const Rect& r) { return r.x + r.w * 0.5f; }
 float centreY(const Rect& r) { return r.y + r.h * 0.5f; }
+
+// How many rows of the list actually exist in the retained tree. This is the
+// number virtualisation is supposed to bound — by the viewport, not by `count`.
+int countRows(const ui::ElementPtr& e, ui::Key base, int n) {
+    int c = (e->key >= base && e->key < base + static_cast<ui::Key>(n)) ? 1 : 0;
+    for (const auto& child : e->children) c += countRows(child, base, n);
+    return c;
+}
+
+// Records what the paint pass submits, so the clip can be asserted on without
+// a GPU. This is the paint-side counterpart of the hit-test assertions.
+struct RecordingDevice final : rhi::Device {
+    std::vector<rhi::SdfRect>   rects;
+    std::vector<rhi::GlyphQuad> quads;
+
+    void beginFrame(Color) override {}
+    void endFrame() override {}
+    void resize(uint32_t, uint32_t) override {}
+    void drawSdfRects(const rhi::SdfRect* r, uint32_t n) override {
+        rects.assign(r, r + n);
+    }
+    void drawGlyphQuads(const rhi::GlyphQuad* q, uint32_t n) override {
+        quads.assign(q, q + n);
+    }
+};
+
+bool sameRect(const rhi::ClipRect& c, const Rect& box) {
+    return std::fabs(c.x0 - box.x) < 0.5f && std::fabs(c.y0 - box.y) < 0.5f &&
+           std::fabs(c.x1 - box.right()) < 0.5f && std::fabs(c.y1 - box.bottom()) < 0.5f;
+}
 
 void click(ui::Ui& ui, const Rect& box) {
     ui.dispatchEvent(mouse(ui::InputEventType::MouseDown, centreX(box), centreY(box)));
@@ -387,6 +488,86 @@ int runInputTest(ui::Ui& ui, App& app) {
     ui.update();
     check(app.clicks == 2, "Space activates the focused button");
 
+    // --- wheel bubbles out of a row into the list -------------------------
+    const float rowY = kBoxList.y + 14.0f;
+    ui.dispatchEvent(moveTo(centreX(kBoxList), rowY));
+    check(ui.hoveredKey() >= kListRow && ui.hoveredKey() < kListRow + kListCount,
+          "hover lands on a visible list row");
+
+    {
+        std::vector<ui::Key> chain;
+        ui.hitChain(centreX(kBoxList), rowY, chain);
+        check(chain.size() == 2 && chain.front() >= kListRow && chain.back() == kList,
+              "hit chain is the row followed by its list container");
+    }
+
+    ui::InputEvent wheel;
+    wheel.type  = ui::InputEventType::MouseWheel;
+    wheel.x     = centreX(kBoxList);
+    wheel.y     = rowY;
+    wheel.wheel = -3.0f;                      // negative = scroll down
+
+    const float beforeScroll = app.list.offset;
+    ui.dispatchEvent(wheel);
+    ui.update();
+    check(app.list.offset > beforeScroll,
+          "wheel over a row scrolls the list rather than being swallowed");
+
+    // --- scrolling clamps at the end --------------------------------------
+    for (int i = 0; i < 40; ++i) ui.dispatchEvent(wheel);
+    ui.update();
+    const float listMax = static_cast<float>(kListCount) * 30.0f - kBoxList.h;
+    check(std::fabs(app.list.offset - listMax) < 0.5f, "scrolling clamps at the end");
+
+    // --- virtualisation ---------------------------------------------------
+    check(countRows(ui.root(), kListRow, kListCount) < 14,
+          "only the visible rows exist as nodes");
+
+    // --- clipping is respected by hit testing -----------------------------
+    {
+        std::vector<ui::Key> chain;
+        // Inside the list panel, above the list box: outside the clip, so
+        // neither the container nor any row may be hit.
+        ui.hitChain(centreX(kBoxList), kBoxList.y - 6.0f, chain);
+        bool touchedList = false;
+        for (ui::Key k : chain) {
+            if (k == kList || (k >= kListRow && k < kListRow + kListCount)) touchedList = true;
+        }
+        check(!touchedList, "hit testing stops at the clip rectangle");
+    }
+
+    // --- scrollbar drag ---------------------------------------------------
+    const Rect barBox{ kBoxList.right() - 8.0f, kBoxList.y, 8.0f, kBoxList.h };
+    ui.dispatchEvent(mouse(ui::InputEventType::MouseDown, centreX(barBox), kBoxList.y + 4.0f));
+    check(ui.capturedKey() == kList + 1, "scrollbar takes the drag capture");
+    ui.dispatchEvent(mouse(ui::InputEventType::MouseUp, centreX(barBox), kBoxList.y + 4.0f));
+    ui.update();
+    check(app.list.offset < listMax * 0.2f, "dragging the bar to the top returns to the start");
+
+    // --- the paint pass carries the scissor --------------------------------
+    {
+        RecordingDevice dev;
+        ui.paint(dev);
+
+        int scrollPrims = 0;
+        int listPrims   = 0;
+        int stray       = 0;
+        for (const auto& r : dev.rects) {
+            if (!r.clip.enabled) continue;
+            if (sameRect(r.clip, kBoxScroll))      ++scrollPrims;
+            else if (sameRect(r.clip, kBoxList))   ++listPrims;
+            else                                   ++stray;
+        }
+
+        int clippedGlyphs = 0;
+        for (const auto& q : dev.quads) if (q.clip.enabled) ++clippedGlyphs;
+
+        check(scrollPrims > 0, "scroll view content is painted with the viewport scissor");
+        check(listPrims > 0,   "list view rows are painted with the viewport scissor");
+        check(stray == 0,      "no primitive carries an unexpected scissor");
+        check(clippedGlyphs > 0, "text inside a clip container is scissored too");
+    }
+
     // --- theme swap -------------------------------------------------------
     ui.setTheme(ui::lightTheme());
     ui.update();
@@ -432,6 +613,17 @@ int main(int argc, char** argv) {
     app.input.text = "TacUI";
     app.input.moveTo(static_cast<int>(app.input.text.size()));
 
+    // Row labels live in the app so the pointers stay stable; `listView` only
+    // borrows them for the duration of the build.
+    app.rowLabels.reserve(kListCount);
+    for (int i = 0; i < kListCount; ++i) {
+        char buf[24];
+        std::snprintf(buf, sizeof buf, "Mesh_%02d", i);
+        app.rowLabels.emplace_back(buf);
+    }
+    app.rowPtrs.reserve(kListCount);
+    for (const auto& s : app.rowLabels) app.rowPtrs.push_back(s.c_str());
+
     if (!ui.init([&app](ui::BuildContext& ctx) {
             ui::Builder b(ctx);
             ui::VNode*  root = buildUi(b, app);
@@ -459,7 +651,7 @@ int main(int argc, char** argv) {
     host::Options opts;
     opts.title      = "TacUI - Controls";
     opts.width      = 890;
-    opts.height     = 500;
+    opts.height     = 712;
     opts.clear      = ui::darkTheme().background;
     opts.maxSeconds = maxSeconds;
 
