@@ -1,0 +1,341 @@
+{# 官网首页（落地页）。纯模板渲染，不改 docs/index.md 的正文。
+   改文案直接改这里；docs/index.md 只保留一份简短的文字版说明（给搜索引擎 / GitHub 看）。 #}
+<div class="tm-home">
+
+  {# cinder 主题的 scrollspy 会找 .bs-sidebar，首页没有目录，放一个占位避免报错 #}
+  <div class="bs-sidebar tm-toc-placeholder" aria-hidden="true"></div>
+
+  <!-- ============================ Hero ============================ -->
+  <section class="tm-hero">
+    <div class="tm-hero-bg" aria-hidden="true"></div>
+    <div class="tm-wrap tm-hero-inner">
+      <div class="tm-hero-copy">
+        <p class="tm-pill"><span class="tm-pill-dot" aria-hidden="true"></span>开源 · MIT · Windows + D3D12</p>
+        <h1 class="tm-hero-title">TacUI</h1>
+        <p class="tm-hero-tagline">声明式重建，直写零重建。</p>
+        <p class="tm-hero-lead">
+          一个 <strong>GPU 加速、retained mode</strong> 的界面库：C++ 核心用
+          <strong>三棵树</strong>（VNode / Element / RenderObject）承接声明与 diff，
+          再用 <strong>base / override 双通道</strong>把高频动画从重建里摘出去；
+          跨语言只走一层稳定的 <strong>C ABI</strong>，宿主语言用它自己的原生语法写 UI ——
+          没有 XML，没有独立脚本。
+        </p>
+        <p class="tm-cta">
+          <a class="tm-btn tm-btn-primary tm-btn-lg" href="{{ 'getting-started/'|url }}">开始构建 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+          <a class="tm-btn tm-btn-ghost tm-btn-lg" href="#features">功能一览</a>
+          <a class="tm-btn tm-btn-ghost tm-btn-lg" href="{{ config.repo_url }}" target="_blank" rel="noopener"><i class="fab fa-github" aria-hidden="true"></i> 源码</a>
+        </p>
+        <ul class="tm-hero-facts">
+          <li>Windows x64 · D3D12</li>
+          <li>C++20 · CMake · 无第三方依赖</li>
+          <li>C ABI + Python 绑定</li>
+        </ul>
+      </div>
+
+      <div class="tm-hero-visual">
+        <button type="button" class="tm-hero-shot-btn" data-tm-lightbox="{{ 'img/app-shot.png'|url }}"
+                aria-label="全屏查看示例截图（Esc 关闭）">
+          <img class="tm-hero-shot" src="{{ 'img/app-shot.png'|url }}" width="800" height="340"
+               alt="TacUI 示例 asset_browser：场景列表、选中行、详情面板与动画指示条">
+          <span class="tm-hero-shot-hint" aria-hidden="true"><i class="fas fa-expand"></i> 点击全屏看大图</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="tm-wrap">
+      <ul class="tm-stats">
+        <li>
+          <b>2</b>
+          <span><strong>变更通道</strong>声明式重建 + 直写 override，生效值 = override 否则 base</span>
+        </li>
+        <li>
+          <b>3</b>
+          <span><strong>棵树</strong>VNode / Element / RenderObject，稳定身份 + diff</span>
+        </li>
+        <li>
+          <b>1</b>
+          <span><strong>个跨语言边界</strong>只有 C ABI 暴露给宿主，代际句柄 + IDL 生成</span>
+        </li>
+        <li>
+          <b>M0</b>
+          <span><strong>里程碑</strong>架构验证完成，最小基线已经能跑</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================ 功能 ============================ -->
+  <section class="tm-section" id="features">
+    <div class="tm-wrap">
+      <header class="tm-section-head">
+        <p class="tm-eyebrow">功能</p>
+        <h2 class="tm-section-title">把「声明」和「高频变化」拆成两条路</h2>
+        <p class="tm-section-sub">
+          这是整个设计的支点。声明式重建适合描述 UI，却不适配每帧都在变的动画与外部数据；
+          所以每个可动画属性都有两个通道，优先级只有一条规则。
+        </p>
+      </header>
+
+      <div class="tm-cards">
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/paths.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">两条变更通道</h3>
+          <p class="tm-card-text">
+            路径 A 改 state → 重建 VNode → diff → 写 base；路径 B 直接写 override → 只重绘。
+            生效值是 <code>override ?: base</code>，没有第二套优先级。
+          </p>
+          <a class="tm-card-link" href="{{ 'two-paths/'|url }}">两条变更通道 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/trees.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">三棵树 + diff</h3>
+          <p class="tm-card-text">
+            不可变描述 + diff + 稳定身份（Flutter 式骨架），不是可变对象原地改的 WPF 模型。
+            无反射、可热重载、可测试，跨语言传递同一份语义。
+          </p>
+          <a class="tm-card-link" href="{{ 'architecture/'|url }}">架构说明 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/abi.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">C ABI 唯一边界</h3>
+          <p class="tm-card-text">
+            内部 struct 永不暴露，宿主只拿 <code>NodeRef</code>。代际句柄挡住悬垂引用，
+            一次 FFI 提交整棵子树，为 v1→v2（SoA buffer、渲染线程）留出 drop-in 的空间。
+          </p>
+          <a class="tm-card-link" href="{{ 'python/'|url }}">C ABI 与绑定 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/gpu.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">Retained GPU 渲染</h3>
+          <p class="tm-card-text">
+            保留视觉树 + 保留 GPU 资源：属性变化只更新 uniform / transform，不重建 GPU 对象。
+            每元素持有自己的 GPU 资源，生成一次就复用。
+          </p>
+          <a class="tm-card-link" href="{{ 'architecture/'|url }}">渲染架构 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/aa.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">解析式反锯齿</h3>
+          <p class="tm-card-text">
+            AA 走解析覆盖而不是超采样：矩形、圆角、文字各有自己的解析路径。
+            这不是可选项 —— 节点图连线是贝塞尔曲线，AA 必须进 M1。
+          </p>
+          <a class="tm-card-link" href="{{ 'plan/'|url }}">方案 §3.3 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/dsl.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">原生声明式 DSL</h3>
+          <p class="tm-card-text">
+            不同语言用各自的惯用法表达同一棵树：Rust 的 proc-macro、C# 的 source-gen、
+            Python 的 context manager。core 提供 builder 基座，各语言只写薄薄一层。
+          </p>
+          <a class="tm-card-link" href="{{ 'plan/'|url }}">对外 API <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/embed.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">可嵌入的 core</h3>
+          <p class="tm-card-text">
+            core 不带宿主语言依赖，能嵌进已有进程：已经拥有窗口与渲染器的应用，
+            自己驱动 <code>update()</code> 与 <code>paint()</code> 即可，完全不碰 host。
+          </p>
+          <a class="tm-card-link" href="{{ 'building-ui/'|url }}">写一个 UI <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+
+        <article class="tm-card">
+          <div class="tm-card-icon"><img src="{{ 'img/icons/components.svg'|url }}" alt="" width="32" height="32"></div>
+          <h3 class="tm-card-title">组件与主题</h3>
+          <p class="tm-card-text">
+            组件库的前提是 core 里的输入系统：命中测试、事件冒泡、焦点、拖拽捕获。
+            主题令牌让外观不漂移，组件放在 core，不重复写在各语言绑定里。
+          </p>
+          <a class="tm-card-link" href="{{ 'components/'|url }}">组件设计 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 工作流 ============================ -->
+  <section class="tm-section tm-section-alt" id="workflow">
+    <div class="tm-wrap">
+      <header class="tm-section-head">
+        <p class="tm-eyebrow">工作流</p>
+        <h2 class="tm-section-title">一帧里，四条路各走各的</h2>
+        <p class="tm-section-sub">
+          输入改变状态，状态触发重建；动画不碰树，直接写 override。决定权在单个属性上，
+          框架里没有「这是动画控件」这类特判。
+        </p>
+      </header>
+
+      <ol class="tm-steps">
+        <li class="tm-step">
+          <div class="tm-step-badge"><img src="{{ 'img/icons/declare.svg'|url }}" alt="" width="28" height="28"></div>
+          <h3 class="tm-step-title">1 · 声明</h3>
+          <p class="tm-step-text">宿主语言构建一棵不可变 VNode 描述，一次 FFI 提交整棵子树。</p>
+        </li>
+        <li class="tm-step">
+          <div class="tm-step-badge"><img src="{{ 'img/icons/diff.svg'|url }}" alt="" width="28" height="28"></div>
+          <h3 class="tm-step-title">2 · diff</h3>
+          <p class="tm-step-text">按稳定身份对账：create / update / destroy，只把变化落到 Element 树的 base。</p>
+        </li>
+        <li class="tm-step">
+          <div class="tm-step-badge"><img src="{{ 'img/icons/override.svg'|url }}" alt="" width="28" height="28"></div>
+          <h3 class="tm-step-title">3 · 直写</h3>
+          <p class="tm-step-text">动画与外部数据写 override：不标脏、不重建，只重绘受影响的那一层。</p>
+        </li>
+        <li class="tm-step">
+          <div class="tm-step-badge"><img src="{{ 'img/icons/paint.svg'|url }}" alt="" width="28" height="28"></div>
+          <h3 class="tm-step-title">4 · 绘制</h3>
+          <p class="tm-step-text">RenderObject 树产出 DrawBatch，交给解析 AA、Glyph Atlas 与 RHI。</p>
+        </li>
+      </ol>
+
+      <ul class="tm-format-flow">
+        <li class="tm-chip-group">
+          <span class="tm-chip-label">路径 A</span>
+          <span class="tm-chip">改 state</span><span class="tm-chip">重建</span><span class="tm-chip">diff</span><span class="tm-chip">base</span>
+        </li>
+        <li class="tm-flow-arrow"><i class="fas fa-arrow-right" aria-hidden="true"></i></li>
+        <li class="tm-chip-group">
+          <span class="tm-chip-label">路径 B</span>
+          <span class="tm-chip tm-chip-strong">override</span>
+        </li>
+        <li class="tm-flow-arrow"><i class="fas fa-arrow-right" aria-hidden="true"></i></li>
+        <li class="tm-chip-group">
+          <span class="tm-chip-label">生效值</span>
+          <span class="tm-chip tm-chip-ghost">override 若 token 活跃，否则 base</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================ 架构 ============================ -->
+  <section class="tm-section" id="architecture">
+    <div class="tm-wrap">
+      <header class="tm-section-head">
+        <p class="tm-eyebrow">架构</p>
+        <h2 class="tm-section-title">六层，只有一个跨语言边界</h2>
+        <p class="tm-section-sub">
+          L4 是唯一暴露给宿主语言的面；L0–L3 永远不直接跨出去。想深挖哪一层，直接点进去。
+        </p>
+      </header>
+
+      <div class="tm-arch">
+        <a class="tm-arch-row" href="{{ 'plan/'|url }}">
+          <span class="tm-arch-idx">L5</span>
+          <span class="tm-arch-name">DSL / 宿主语言层<em>Rust · C# · Python · Swift · TS</em></span>
+          <span class="tm-arch-desc">各语言用原生语法表达 UI，产出紧凑的 VNode 构建调用序列。</span>
+          <span class="tm-arch-go"><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a class="tm-arch-row" href="{{ 'python/'|url }}">
+          <span class="tm-arch-idx">L4</span>
+          <span class="tm-arch-name">Binding 层<em>capi/ · C ABI + IDL</em></span>
+          <span class="tm-arch-desc">唯一的稳定 ABI 边界：代际句柄、回调表、版本协商。</span>
+          <span class="tm-arch-go"><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a class="tm-arch-row" href="{{ 'architecture/'|url }}">
+          <span class="tm-arch-idx">L3</span>
+          <span class="tm-arch-name">Framework 层<em>core/framework</em></span>
+          <span class="tm-arch-desc">Element 树（diff + state）与 RenderObject 树（layout / paint）、控件库、输入路由。</span>
+          <span class="tm-arch-go"><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a class="tm-arch-row" href="{{ 'two-paths/'|url }}">
+          <span class="tm-arch-idx">L2</span>
+          <span class="tm-arch-name">Scene / Retained 层<em>DrawBatch · GPU 句柄</em></span>
+          <span class="tm-arch-desc">Layer 树、脏标记与属性快照：base 落在这一层，override 在这一层叠加。</span>
+          <span class="tm-arch-go"><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a class="tm-arch-row" href="{{ 'architecture/'|url }}">
+          <span class="tm-arch-idx">L1</span>
+          <span class="tm-arch-name">Renderer<em>core/renderer</em></span>
+          <span class="tm-arch-desc">批处理、解析式 AA、Glyph Atlas、矢量路径与合成器。</span>
+          <span class="tm-arch-go"><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a class="tm-arch-row" href="{{ 'architecture/'|url }}">
+          <span class="tm-arch-idx">L0</span>
+          <span class="tm-arch-name">Platform / RHI<em>rhi/ · platform/ · host/</em></span>
+          <span class="tm-arch-desc">D3D12（第一版）、窗口、输入；IME / DPI / 无障碍按里程碑补。</span>
+          <span class="tm-arch-go"><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+      </div>
+
+      <div class="tm-notes">
+        <div class="tm-note">
+          <h3>为什么声明够快</h3>
+          <p>重建的边界是重建的代价。diff 只改动到的 base，布局与绘制只在 base 变化时触发，动画不进这条路。</p>
+        </div>
+        <div class="tm-note">
+          <h3>为什么直写安全</h3>
+          <p>override 只开放 paint-only 属性（translate / scale / rotate / opacity / color）。影响布局的属性必须走重建。</p>
+        </div>
+        <div class="tm-note">
+          <h3>为什么能跨语言</h3>
+          <p>内部 struct 从不跨越边界，宿主只拿 <code>NodeRef</code>。所以内部实现换成 SoA buffer 也不破坏绑定。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 快速开始 ============================ -->
+  <section class="tm-section tm-section-alt" id="quickstart">
+    <div class="tm-wrap">
+      <header class="tm-section-head">
+        <p class="tm-eyebrow">快速开始</p>
+        <h2 class="tm-section-title">三条命令，把 M0 基线跑起来</h2>
+        <p class="tm-section-sub">
+          Windows、MSVC、CMake ≥ 3.25 与 Windows SDK。核心无第三方依赖，不需要 vcpkg。
+        </p>
+      </header>
+
+      <div class="tm-quickstart">
+        <div class="tm-code">
+          <div class="tm-code-head" aria-hidden="true">
+            <span class="tm-shot-dots"><i></i><i></i><i></i></span>
+            <span>PowerShell</span>
+          </div>
+<pre><code class="language-powershell">cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+cmake --build build --config Debug
+
+# 先跑这个：列表 + 选中 + 详情 + 动画指示条
+.\build\bin\asset_browser.exe
+
+# 验收 M0 六条标准
+.\build\bin\m0.exe --selftest</code></pre>
+        </div>
+
+        <div class="tm-quickstart-side">
+          <h3>接着去哪</h3>
+          <ul class="tm-links">
+            <li><a href="{{ 'getting-started/'|url }}">构建与运行</a> —— 目标、产物与验证方式</li>
+            <li><a href="{{ 'building-ui/'|url }}">写一个 UI</a> —— 一个 include 就是全部公开面</li>
+            <li><a href="{{ 'two-paths/'|url }}">两条变更通道</a> —— 641 帧只重建一次是怎么做到的</li>
+            <li><a href="{{ 'python/'|url }}">Python 绑定</a> —— 同一份 core，同样的画面</li>
+          </ul>
+          <p class="tm-quickstart-cta">
+            <a class="tm-btn tm-btn-primary" href="{{ 'getting-started/'|url }}">从构建开始 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ CTA ============================ -->
+  <section class="tm-cta-band">
+    <div class="tm-wrap tm-cta-band-inner">
+      <div>
+        <h2>TacUI 是开源的（MIT）</h2>
+        <p>架构验证已经完成，接下来是控件库、文本与平台集成。欢迎来 GitHub 提 Issue、读方案，或者直接看源码。</p>
+      </div>
+      <p class="tm-cta-band-btns">
+        <a class="tm-btn tm-btn-primary tm-btn-lg" href="{{ config.repo_url }}" target="_blank" rel="noopener"><i class="fab fa-github" aria-hidden="true"></i> GitHub 仓库</a>
+        <a class="tm-btn tm-btn-ghost tm-btn-lg" href="{{ 'roadmap/'|url }}">路线图</a>
+      </p>
+    </div>
+  </section>
+
+</div>

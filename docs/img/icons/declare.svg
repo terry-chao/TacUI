@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="url(#tacui-icon)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <defs>
+    <linearGradient id="tacui-icon" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12BEDB"/><stop offset=".5" stop-color="#2563EB"/><stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <path d="M4 20h3.6l11-11-3.6-3.6-11 11z"/>
+  <path d="M13.6 6.4 17.2 10"/>
+  <path d="M4 20h16"/>
+</svg>

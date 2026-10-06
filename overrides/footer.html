@@ -1,0 +1,58 @@
+{# 站点页脚：产品 / 文档 / 项目 三列。 #}
+{%- set tm_home = nav.homepage.url|url if nav.homepage else base_url -%}
+{%- set tm_ext = config.extra.external if config.extra and config.extra.external else {} -%}
+<div class="tm-footer">
+  <div class="tm-wrap tm-footer-inner">
+    <div class="tm-footer-brand">
+      <a class="tm-brand" href="{{ tm_home }}">
+        <img class="tm-brand-logo" src="{{ 'img/logo.png'|url }}" alt="" width="64" height="64">
+        <span class="tm-brand-name">TacUI</span>
+      </a>
+      <p>GPU 加速 · retained mode · C++ 核心 · 多语言声明式 UI 库。MIT 许可，源码在 GitHub。</p>
+    </div>
+
+    <div class="tm-footer-col">
+      <p class="tm-footer-title">产品</p>
+      <ul>
+        <li><a href="{{ tm_home }}#features">功能总览</a></li>
+        <li><a href="{{ tm_home }}#workflow">工作流</a></li>
+        <li><a href="{{ tm_home }}#architecture">系统架构</a></li>
+        <li><a href="{{ tm_home }}#quickstart">快速开始</a></li>
+      </ul>
+    </div>
+
+    <div class="tm-footer-col">
+      <p class="tm-footer-title">文档</p>
+      <ul>
+        <li><a href="{{ 'overview/'|url }}">定位与目标</a></li>
+        <li><a href="{{ 'getting-started/'|url }}">构建与运行</a></li>
+        <li><a href="{{ 'two-paths/'|url }}">两条变更通道</a></li>
+        <li><a href="{{ 'architecture/'|url }}">架构</a></li>
+        <li><a href="{{ 'roadmap/'|url }}">路线图</a></li>
+      </ul>
+    </div>
+
+    <div class="tm-footer-col">
+      <p class="tm-footer-title">项目</p>
+      <ul>
+        <li><a href="{{ config.repo_url }}" target="_blank" rel="noopener">GitHub 仓库</a></li>
+        {%- if tm_ext.releases %}
+        <li><a href="{{ tm_ext.releases }}" target="_blank" rel="noopener">发布 / 下载</a></li>
+        {%- endif %}
+        {%- if tm_ext.issues %}
+        <li><a href="{{ tm_ext.issues }}" target="_blank" rel="noopener">问题反馈</a></li>
+        {%- endif %}
+        {%- if tm_ext.build_guide %}
+        <li><a href="{{ tm_ext.build_guide }}" target="_blank" rel="noopener">构建指南</a></li>
+        {%- endif %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="tm-footer-bottom">
+    <div class="tm-wrap tm-footer-bottom-inner">
+      <span>© 2026 Terry · MIT License</span>
+      <span>{{ config.site_name }} 官网与文档同一套 MkDocs 构建</span>
+    </div>
+  </div>
+</div>

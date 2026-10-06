@@ -1,0 +1,40 @@
+{# 产品官网顶栏：官网与文档共用。
+   - 产品导航（功能 / 工作流 / 架构 / 快速开始）指回首页锚点，
+     所以从任意文档页点这些链接都会回到首页对应小节。
+   - 「文档」指文档入口；文档页的完整目录在左侧栏（overrides/docs-layout.html），
+     不塞进顶栏。 #}
+{%- set tm_home = nav.homepage.url|url if nav.homepage else base_url -%}
+{%- set tm_ext = config.extra.external if config.extra and config.extra.external else {} -%}
+<header class="tm-header" id="tm-header">
+  <div class="tm-header-inner">
+    <a class="tm-brand" href="{{ tm_home }}">
+      <img class="tm-brand-logo" src="{{ 'img/logo.png'|url }}" alt="" width="64" height="64">
+      <span class="tm-brand-text">
+        <span class="tm-brand-name">TacUI</span>
+        <span class="tm-brand-sub">声明式 · 直写快路径</span>
+      </span>
+    </a>
+
+    <button type="button" class="tm-burger" data-tm-toggle="nav" aria-expanded="false" aria-controls="tm-nav" aria-label="展开导航">
+      <span></span><span></span><span></span>
+    </button>
+
+    <nav class="tm-nav" id="tm-nav" aria-label="站点导航">
+      <a class="tm-nav-link" href="{{ tm_home }}#features">功能</a>
+      <a class="tm-nav-link" href="{{ tm_home }}#workflow">工作流</a>
+      <a class="tm-nav-link" href="{{ tm_home }}#architecture">架构</a>
+      <a class="tm-nav-link" href="{{ 'overview/'|url }}">文档</a>
+      <a class="tm-nav-link" href="{{ tm_home }}#quickstart">快速开始</a>
+      <span class="tm-nav-sep" aria-hidden="true"></span>
+      <a class="tm-nav-link tm-nav-gh" href="{{ config.repo_url }}" target="_blank" rel="noopener">
+        <i class="fab fa-github" aria-hidden="true"></i> GitHub
+      </a>
+      {%- if tm_ext.releases %}
+      <a class="tm-btn tm-btn-sm tm-btn-primary" href="{{ tm_ext.releases }}" target="_blank" rel="noopener">下载</a>
+      {%- endif %}
+      <button type="button" class="tm-nav-link tm-nav-search" data-toggle="modal" data-target="#mkdocs_search_modal">
+        <i class="fas fa-search" aria-hidden="true"></i> 搜索
+      </button>
+    </nav>
+  </div>
+</header>

@@ -1,0 +1,66 @@
+site_name: TacUI
+site_description: GPU 加速 · Retained Mode · C++ 核心 · 多语言声明式 UI 库
+site_url: https://terry-chao.github.io/TacUI/
+repo_url: https://github.com/terry-chao/TacUI
+repo_name: terry-chao/TacUI
+edit_uri: edit/main/docs/
+
+theme:
+  name: cinder
+  custom_dir: overrides
+  colorscheme: github
+  highlightjs: true
+  hljs_languages:
+    - yaml
+    - cpp
+    - csharp
+    - python
+    - rust
+    - cmake
+    - bash
+    - powershell
+
+extra_css:
+  - css/brand.css
+  - css/home.css
+
+extra_javascript:
+  - js/site.js
+
+copyright: © 2026 Terry · MIT License
+
+# 官网用到的外链（顶栏「下载」、页脚「项目」列）
+extra:
+  external:
+    releases: https://github.com/terry-chao/TacUI/releases
+    issues: https://github.com/terry-chao/TacUI/issues
+    build_guide: https://github.com/terry-chao/TacUI/blob/main/README.md#build
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+
+# 导航：首页 = 产品落地页（overrides/home.html 渲染），其余是文档。
+# 文档导航会渲染成文档页左侧的目录树（overrides/nav-tree.html），
+# 所以这里的分组名就是侧栏里看到的小标题。分组标题改了不影响页面 URL。
+nav:
+  - 首页: index.md
+  - 总览:
+      - 定位与目标: overview.md
+      - 路线图与里程碑: roadmap.md
+      - 方案（决策清单）: plan.md
+      - 架构: architecture.md
+  - 指南:
+      - 构建与运行: getting-started.md
+      - 写一个 UI: building-ui.md
+      - 两条变更通道: two-paths.md
+  - 组件:
+      - 组件设计: components.md
+  - 参考:
+      - C ABI 与 Python 绑定: python.md
+      - 品牌与资源: brand.md
+
+plugins:
+  - search

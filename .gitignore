@@ -11,6 +11,22 @@ CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
 
+# Python
+__pycache__/
+*.pyc
+
+# Build output
+build/
+out/
+*.obj
+*.pdb
+*.ilk
+*.cso
+*.exe
+
+# 官网构建产物（mkdocs build 输出；源码在 docs/ 与 overrides/）
+site/
+
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
