@@ -138,6 +138,11 @@ public:
     // interactive region (architecture.md §14.4).
     Key hitTest(float x, float y) const;
 
+    // The hit chain, deepest first: the node under the pointer followed by the
+    // interactive ancestors it can bubble to. Exposed so tooling and tests can
+    // assert on propagation without duplicating the walk.
+    void hitChain(float x, float y, std::vector<Key>& out) const;
+
     // Registers a node's behaviour. Called by components during the build.
     void registerBehavior(Key key, NodeBehavior behavior);
 
@@ -174,6 +179,23 @@ private:
     bool  pointerInside_ = false;
 
     const NodeBehavior* behaviorOf(Key key) const;
+
+    // Deepest-first walk used by both hitTest() and bubbling. `clip` carries
+    // the accumulated clip rectangle; `clipped` says whether it is active.
+    void collectHitChain(const Element* e, float x, float y,
+                         Rect clip, bool clipped,
+                         std::vector<const Element*>& out) const;
+
+    Element* findElement(Key key) const;
+
+    void mouseDown(float x, float y);
+    void mouseUp(float x, float y);
+    void mouseWheel(float x, float y, float lines);
+    void keyDown(const InputEvent& ev);
+
+    // Scratch for the hit walk, kept across events so dispatching does not
+    // allocate on every mouse move.
+    mutable std::vector<const Element*> chain_;
 
     Theme theme_ = darkTheme();
 

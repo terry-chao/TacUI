@@ -29,9 +29,12 @@ public:
         float halfSize[2];
         float uv[4];
         float color[4];
+        float clip[4];         // x0, y0, x1, y1 in pixels
+        float clipEnabled;
+        float pad2[3];
     };
-    // center(8) + halfSize(8) + uv(16) + color(16)
-    static_assert(sizeof(Instance) == 48, "Instance layout must match the HLSL GlyphInstance");
+    // center(8) + halfSize(8) + uv(16) + color(16) + clip(16) + enabled/pad(16)
+    static_assert(sizeof(Instance) == 80, "Instance layout must match the HLSL GlyphInstance");
 
     bool init(ID3D12Device* device, DXGI_FORMAT rtvFormat, uint32_t atlasSize);
     void shutdown();

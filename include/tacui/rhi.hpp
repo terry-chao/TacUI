@@ -28,10 +28,21 @@ struct SwapchainDesc {
 // This exists purely so the harness can put pixels on screen without knowing
 // anything about the backend. M1 replaces it with a real DrawBatch + RHI
 // resource model (architecture.md §3.2).
+// Pixel-space scissor rectangle, half-open: [x0, x1) x [y0, y1).
+//
+// M1 carries the clip per primitive rather than as device state, because the
+// batch is one instanced draw call — a scissor stack would mean splitting it.
+// The cost is 20 bytes per instance; M2's DrawBatch carries clip state instead.
+struct ClipRect {
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+    bool  enabled = false;
+};
+
 struct SdfRect {
     Rect  bounds;                   // pixel space, top-left origin
     float cornerRadius = 0.0f;
     Color color;
+    ClipRect clip;                  // optional scissor
 };
 
 // One glyph quad, already positioned and mapped into the coverage atlas
@@ -41,6 +52,7 @@ struct GlyphQuad {
     float u0 = 0.0f, v0 = 0.0f;     // top-left of the atlas rect
     float u1 = 0.0f, v1 = 0.0f;     // bottom-right
     Color color;
+    ClipRect clip;                  // optional scissor
 };
 
 // Backend-agnostic frame surface.

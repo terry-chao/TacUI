@@ -144,6 +144,19 @@ LRESULT Win32Window::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_MOUSEWHEEL: {
+        // Unlike every other mouse message, the wheel message carries *screen*
+        // coordinates, so convert before reporting.
+        POINT pt{ mouseAxis(lParam), mouseAxis(lParam >> 16) };
+        ScreenToClient(hwnd_, &pt);
+        const int32_t notches =
+            static_cast<int32_t>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA;
+        if (onEvent_) {
+            onEvent_({ EventType::MouseWheel, pt.x, pt.y, 0, 0, 0, false, 0, notches });
+        }
+        return 0;
+    }
+
     case WM_CHAR: {
         // WM_CHAR is the translated character, which is what text input wants;
         // WM_KEYDOWN above is for editing and navigation keys. Control

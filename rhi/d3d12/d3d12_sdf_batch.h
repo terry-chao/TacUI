@@ -30,8 +30,11 @@ public:
         float radius;
         float pad0;
         float pad1[2];
+        float clip[4];         // x0, y0, x1, y1 in pixels
+        float clipEnabled;
+        float pad2[3];
     };
-    static_assert(sizeof(Instance) == 48, "Instance layout must match the HLSL RectInstance");
+    static_assert(sizeof(Instance) == 80, "Instance layout must match the HLSL RectInstance");
 
     bool init(ID3D12Device* device, DXGI_FORMAT rtvFormat);
     void shutdown();

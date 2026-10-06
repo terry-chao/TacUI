@@ -211,6 +211,14 @@ void D3D12SdfBatch::record(ID3D12GraphicsCommandList* cmd,
         dst[i].pad0        = 0.0f;
         dst[i].pad1[0]     = 0.0f;
         dst[i].pad1[1]     = 0.0f;
+        dst[i].clip[0]     = r.clip.x0;
+        dst[i].clip[1]     = r.clip.y0;
+        dst[i].clip[2]     = r.clip.x1;
+        dst[i].clip[3]     = r.clip.y1;
+        dst[i].clipEnabled = r.clip.enabled ? 1.0f : 0.0f;
+        dst[i].pad2[0]     = 0.0f;
+        dst[i].pad2[1]     = 0.0f;
+        dst[i].pad2[2]     = 0.0f;
     }
 
     cmd->SetGraphicsRootSignature(rootSig_.Get());

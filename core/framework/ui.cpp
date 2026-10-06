@@ -22,6 +22,14 @@ Color applyOpacity(Color c, const RenderObject& ro) {
     return c;
 }
 
+Rect intersectRect(const Rect& a, const Rect& b) {
+    const float x0 = std::max(a.x, b.x);
+    const float y0 = std::max(a.y, b.y);
+    const float x1 = std::min(a.right(), b.right());
+    const float y1 = std::min(a.bottom(), b.bottom());
+    return Rect{ x0, y0, std::max(0.0f, x1 - x0), std::max(0.0f, y1 - y0) };
+}
+
 // Paint order is tree order, i.e. the painter's algorithm — within a node type.
 //
 // M0 limitation: rectangles and glyphs go to two separate batches, so all
@@ -32,7 +40,20 @@ void collect(const Element& e,
              std::vector<rhi::SdfRect>& rects,
              std::vector<rhi::GlyphQuad>& quads,
              uint64_t& glyphQuadCount,
-             uint32_t& liveOverrides) {
+             uint32_t& liveOverrides,
+             Rect clip, bool clipped) {
+    // A clip container narrows the scissor for everything below it. Folding it
+    // in here means the primitive carries its own final clip, so the backend
+    // never has to know the tree shape — and one instanced draw call still
+    // covers the whole frame.
+    if (e.clipsChildren) {
+        clip    = clipped ? intersectRect(clip, e.clipBounds) : e.clipBounds;
+        clipped = true;
+    }
+    const rhi::ClipRect scissor = clipped
+        ? rhi::ClipRect{ clip.x, clip.y, clip.right(), clip.bottom(), true }
+        : rhi::ClipRect{};
+
     if (e.render) {
         const RenderObject& ro = *e.render;
         if (ro.overrideActive) ++liveOverrides;
@@ -42,6 +63,7 @@ void collect(const Element& e,
             r.bounds       = effectiveBounds(ro);
             r.cornerRadius = ro.cornerRadius;
             r.color        = effectiveColor(ro);
+            r.clip         = scissor;
             rects.push_back(r);
         } else if (e.type == VType::Text) {
             const Vec2 t     = ro.overrideActive ? ro.overrideTranslate : Vec2{};
@@ -55,6 +77,7 @@ void collect(const Element& e,
                 q.u1 = g.u1;
                 q.v1 = g.v1;
                 q.color = tint;
+                q.clip  = scissor;
                 quads.push_back(q);
                 ++glyphQuadCount;
             }
@@ -62,27 +85,8 @@ void collect(const Element& e,
     }
 
     for (const auto& c : e.children) {
-        collect(*c, rects, quads, glyphQuadCount, liveOverrides);
+        collect(*c, rects, quads, glyphQuadCount, liveOverrides, clip, clipped);
     }
-}
-
-// Depth-first, children before their parent and later siblings first: that is
-// paint order reversed, so the first hit is the topmost node.
-const Element* hitTestRecursive(const Element* e, float x, float y,
-                                const std::unordered_map<Key, NodeBehavior>& behaviors) {
-    for (auto it = e->children.rbegin(); it != e->children.rend(); ++it) {
-        if (const Element* hit = hitTestRecursive(it->get(), x, y, behaviors)) {
-            return hit;
-        }
-    }
-    if (!e->render) return nullptr;
-    // Base bounds, never the overridden ones: an override is paint-only and
-    // must not move the region that responds to the pointer (§14.4).
-    if (!e->render->bounds.contains(x, y)) return nullptr;
-
-    const auto b = behaviors.find(e->key);
-    if (b == behaviors.end() || !b->second.interactive) return nullptr;
-    return e;
 }
 
 void collectFocusable(const Element& e,
@@ -196,7 +200,7 @@ void Ui::paint(rhi::Device& device) {
     uint64_t quadCount     = 0;
     uint32_t liveOverrides = 0;
     if (root_) {
-        collect(*root_, rects_, quads_, quadCount, liveOverrides);
+        collect(*root_, rects_, quads_, quadCount, liveOverrides, Rect{}, false);
     }
 
     // Upload only when the atlas actually gained glyphs — the steady state is
@@ -279,10 +283,63 @@ float Ui::textDescent(float sizePx) const {
     return textSystem_.valid() ? textSystem_.descent(sizePx) : 0.0f;
 }
 
+// Depth-first, children before their parent and later siblings first: that is
+// paint order reversed, so the first entry is the topmost node. Everything
+// after it is the chain an event can bubble through (components.md §2).
+//
+// A node with no render object (a clip container) has no bounds of its own, so
+// it is bounded by the clip it introduces — which is exactly the region it
+// should respond in.
+void Ui::collectHitChain(const Element* e, float x, float y,
+                         Rect clip, bool clipped,
+                         std::vector<const Element*>& out) const {
+    if (e->clipsChildren) {
+        clip    = clipped ? intersectRect(clip, e->clipBounds) : e->clipBounds;
+        clipped = true;
+    }
+    // Outside the clip nothing in this subtree can be hit — not the content,
+    // and not the container itself (components.md §2, "必须尊重 clip").
+    if (clipped && !clip.contains(x, y)) return;
+
+    for (auto it = e->children.rbegin(); it != e->children.rend(); ++it) {
+        collectHitChain(it->get(), x, y, clip, clipped, out);
+    }
+
+    const NodeBehavior* b = behaviorOf(e->key);
+    if (!b || !b->interactive) return;
+    // Base bounds, never the overridden ones: an override is paint-only and
+    // must not move the region that responds to the pointer (§14.4).
+    if (e->render && !e->render->bounds.contains(x, y)) return;
+    out.push_back(e);
+}
+
 Key Ui::hitTest(float x, float y) const {
+    chain_.clear();
     if (!root_) return kNoKey;
-    const Element* hit = hitTestRecursive(root_.get(), x, y, behaviors_);
-    return hit ? hit->key : kNoKey;
+    collectHitChain(root_.get(), x, y, Rect{}, false, chain_);
+    return chain_.empty() ? kNoKey : chain_.front()->key;
+}
+
+void Ui::hitChain(float x, float y, std::vector<Key>& out) const {
+    out.clear();
+    chain_.clear();
+    if (!root_) return;
+    collectHitChain(root_.get(), x, y, Rect{}, false, chain_);
+    out.reserve(chain_.size());
+    for (const Element* e : chain_) out.push_back(e->key);
+}
+
+Element* Ui::findElement(Key key) const {
+    if (!root_ || key == kNoKey) return nullptr;
+    std::vector<Element*> pending;
+    pending.push_back(root_.get());
+    while (!pending.empty()) {
+        Element* e = pending.back();
+        pending.pop_back();
+        if (e->key == key) return e;
+        for (auto& c : e->children) pending.push_back(c.get());
+    }
+    return nullptr;
 }
 
 void Ui::focusNext(bool backwards) {
@@ -305,6 +362,110 @@ void Ui::focusNext(bool backwards) {
     auto       index = std::distance(order.begin(), it);
     index = backwards ? (index - 1 + count) % count : (index + 1) % count;
     focusedKey_ = order[static_cast<size_t>(index)];
+}
+
+// A press walks the chain and stops at the first node that handles a press.
+// That is what makes "a button inside a list row" behave: the button takes the
+// press, the row never sees it, and the row is not also selected
+// (components.md §2).
+void Ui::mouseDown(float x, float y) {
+    if (!root_) {
+        pressedKey_ = kNoKey;
+        return;
+    }
+    chain_.clear();
+    collectHitChain(root_.get(), x, y, Rect{}, false, chain_);
+
+    // Focus goes to the deepest focusable node, independent of who handles the
+    // press — a label inside a focusable card should still focus the card.
+    for (const Element* e : chain_) {
+        const NodeBehavior* b = behaviorOf(e->key);
+        if (b && b->focusable) {
+            focusedKey_ = e->key;
+            break;
+        }
+    }
+
+    pressedKey_ = kNoKey;
+    for (const Element* e : chain_) {
+        const NodeBehavior* b = behaviorOf(e->key);
+        if (!b) continue;
+        // A drag widget takes the capture, and gets one immediate onDrag so
+        // clicking a slider track jumps the thumb there.
+        if (b->onDrag) {
+            capturedKey_ = e->key;
+            b->onDrag(x, y);
+            break;
+        }
+        if (b->onClick) {
+            pressedKey_ = e->key;
+            break;
+        }
+    }
+    dirty_ = true;
+}
+
+void Ui::mouseUp(float x, float y) {
+    chain_.clear();
+    if (root_) {
+        collectHitChain(root_.get(), x, y, Rect{}, false, chain_);
+    }
+
+    if (capturedKey_ != kNoKey) {
+        if (const NodeBehavior* b = behaviorOf(capturedKey_); b && b->onDragEnd) {
+            b->onDragEnd();
+        }
+        capturedKey_ = kNoKey;
+    }
+
+    // A press that wandered off the node before release is not a click. Being
+    // *anywhere* in the node's subtree still counts, which is why this checks
+    // the chain rather than comparing keys for equality.
+    if (pressedKey_ != kNoKey) {
+        bool stillInside = false;
+        for (const Element* e : chain_) {
+            if (e->key == pressedKey_) {
+                stillInside = true;
+                break;
+            }
+        }
+        if (stillInside) {
+            if (const NodeBehavior* b = behaviorOf(pressedKey_); b && b->onClick) {
+                b->onClick();
+            }
+        }
+        pressedKey_ = kNoKey;
+    }
+    dirty_ = true;
+}
+
+// The wheel bubbles until something consumes it — the innermost node that has
+// a use for it wins, and a plain row simply declines.
+void Ui::mouseWheel(float x, float y, float lines) {
+    if (!root_) return;
+    chain_.clear();
+    collectHitChain(root_.get(), x, y, Rect{}, false, chain_);
+    for (const Element* e : chain_) {
+        const NodeBehavior* b = behaviorOf(e->key);
+        if (b && b->onWheel && b->onWheel(lines)) break;
+    }
+}
+
+void Ui::keyDown(const InputEvent& ev) {
+    if (ev.code == KeyCode::Tab) {
+        focusNext(ev.shift);
+        dirty_ = true;
+        return;
+    }
+    // Key input bubbles from the focused node up, so an editor inside a
+    // container still gets first refusal on what it does not consume.
+    for (Element* e = findElement(focusedKey_); e; e = e->parent) {
+        const NodeBehavior* b = behaviorOf(e->key);
+        if (b && b->onKey) {
+            b->onKey(ev);
+            break;
+        }
+    }
 }
 
 void Ui::dispatchEvent(const InputEvent& ev) {
@@ -340,63 +501,25 @@ void Ui::dispatchEvent(const InputEvent& ev) {
             pressedKey_ = kNoKey;
             dirty_      = true;
         }
+        // The drag capture deliberately survives leaving the client area: the
+        // platform still delivers the release to us.
         break;
 
-    case InputEventType::MouseDown: {
-        const Key hit = hitTest(ev.x, ev.y);
-        if (hit == kNoKey) break;
-
-        const NodeBehavior* b = behaviorOf(hit);
-        pressedKey_ = hit;
-        // Clicking a focusable node moves focus to it, the way every desktop
-        // toolkit behaves.
-        if (b && b->focusable) {
-            focusedKey_ = hit;
-        }
-        // A drag widget takes the capture on press, and gets one immediate
-        // onDrag so clicking a slider track jumps the thumb there.
-        if (b && b->onDrag) {
-            capturedKey_ = hit;
-            b->onDrag(ev.x, ev.y);
-        }
-        dirty_ = true;
+    case InputEventType::MouseDown:
+        mouseDown(ev.x, ev.y);
         break;
-    }
 
-    case InputEventType::MouseUp: {
-        const Key hit = hitTest(ev.x, ev.y);
-        const Key was = pressedKey_;
-        pressedKey_ = kNoKey;
-        dirty_      = true;
-
-        if (capturedKey_ != kNoKey) {
-            if (const NodeBehavior* b = behaviorOf(capturedKey_); b && b->onDragEnd) {
-                b->onDragEnd();
-            }
-            capturedKey_ = kNoKey;
-        }
-
-        // A press that wandered off the node before release is not a click.
-        // Tracking this here is why components do not each reimplement it.
-        if (was != kNoKey && hit == was) {
-            if (const NodeBehavior* b = behaviorOf(was); b && b->onClick) {
-                b->onClick();
-            }
-        }
+    case InputEventType::MouseUp:
+        mouseUp(ev.x, ev.y);
         break;
-    }
 
-    case InputEventType::KeyDown: {
-        if (ev.code == KeyCode::Tab) {
-            focusNext(ev.shift);
-            dirty_ = true;
-            break;
-        }
-        if (const NodeBehavior* b = behaviorOf(focusedKey_); b && b->onKey) {
-            b->onKey(ev);
-        }
+    case InputEventType::MouseWheel:
+        mouseWheel(ev.x, ev.y, ev.wheel);
         break;
-    }
+
+    case InputEventType::KeyDown:
+        keyDown(ev);
+        break;
     }
 }
 

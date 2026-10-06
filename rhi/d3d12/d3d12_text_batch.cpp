@@ -333,6 +333,14 @@ void D3D12TextBatch::record(ID3D12GraphicsCommandList* cmd,
         dst[i].color[1]    = q.color.g;
         dst[i].color[2]    = q.color.b;
         dst[i].color[3]    = q.color.a;
+        dst[i].clip[0]     = q.clip.x0;
+        dst[i].clip[1]     = q.clip.y0;
+        dst[i].clip[2]     = q.clip.x1;
+        dst[i].clip[3]     = q.clip.y1;
+        dst[i].clipEnabled = q.clip.enabled ? 1.0f : 0.0f;
+        dst[i].pad2[0]     = 0.0f;
+        dst[i].pad2[1]     = 0.0f;
+        dst[i].pad2[2]     = 0.0f;
     }
 
     cmd->SetGraphicsRootSignature(rootSig_.Get());

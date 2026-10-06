@@ -11,6 +11,9 @@ struct GlyphInstance {
     float2 halfSize;
     float4 uv;         // u0, v0, u1, v1
     float4 color;      // straight alpha
+    float4 clip;       // x0, y0, x1, y1 in pixels
+    float  clipEnabled;
+    float  _pad2[3];
 };
 
 StructuredBuffer<GlyphInstance> gGlyphs : register(t0);
@@ -28,6 +31,8 @@ struct VSOut {
     float4 pos   : SV_Position;
     float2 uv    : TEXCOORD0;
     float4 color : COLOR0;
+    float4 clip  : TEXCOORD1;
+    float  clipOn : TEXCOORD2;
 };
 
 static const float2 kCorners[6] = {
@@ -55,11 +60,23 @@ VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID)
     o.pos   = float4(ndc, 0.0, 1.0);
     o.uv    = uv;
     o.color = g.color;
+    o.clip  = g.clip;
+    o.clipOn = g.clipEnabled;
     return o;
 }
 
 float4 PSMain(VSOut i) : SV_Target
 {
+    if (i.clipOn > 0.5)
+    {
+        float2 p = i.pos.xy;
+        if (p.x < i.clip.x || p.x >= i.clip.z ||
+            p.y < i.clip.y || p.y >= i.clip.w)
+        {
+            discard;
+        }
+    }
+
     float coverage = gAtlas.Sample(gLinear, i.uv);
     float alpha    = i.color.a * coverage;
     if (alpha <= 0.0)

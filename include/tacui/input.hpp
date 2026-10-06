@@ -44,6 +44,7 @@ enum class InputEventType {
     MouseLeave,
     MouseDown,
     MouseUp,
+    MouseWheel,
     KeyDown,
 };
 
@@ -55,6 +56,10 @@ struct InputEvent {
 
     KeyCode  code      = KeyCode::Unknown;
     uint32_t codepoint = 0;     // valid when code == KeyCode::Character
+
+    // MouseWheel: in "lines", positive = scroll up / away from the user. The
+    // host decides the notch size; Windows sends 120ths of a notch.
+    float wheel = 0.0f;
 
     bool shift = false;
     bool ctrl  = false;
@@ -90,6 +95,11 @@ struct NodeBehavior {
     // middle of a slider track jumps the thumb there.
     std::function<void(float x, float y)> onDrag;
     std::function<void()>                 onDragEnd;
+
+    // Mouse wheel while the pointer is over this node. Return true to consume
+    // it; returning false lets it bubble to the nearest ancestor that does
+    // (components.md §2: a row inside a scroll view must not swallow the wheel).
+    std::function<bool(float lines)> onWheel;
 
     bool interactive = false;   // participates in hit testing
     bool focusable   = false;   // participates in the tab order

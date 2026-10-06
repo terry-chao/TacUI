@@ -86,12 +86,16 @@ bool toInputEvent(const platform::WindowEvent& in, ui::InputEvent& out) {
     out.y     = static_cast<float>(in.y);
     out.shift = in.shift;
     out.codepoint = in.codepoint;
+    out.wheel = static_cast<float>(in.wheel);
 
     switch (in.type) {
     case platform::EventType::MouseMove:  out.type = ui::InputEventType::MouseMove;  return true;
     case platform::EventType::MouseLeave: out.type = ui::InputEventType::MouseLeave; return true;
     case platform::EventType::MouseDown:  out.type = ui::InputEventType::MouseDown;  return true;
     case platform::EventType::MouseUp:    out.type = ui::InputEventType::MouseUp;    return true;
+    case platform::EventType::MouseWheel:
+        out.type = ui::InputEventType::MouseWheel;
+        return in.wheel != 0;
     case platform::EventType::KeyDown:
         out.type = ui::InputEventType::KeyDown;
         out.code = toKeyCode(in.key);

@@ -100,6 +100,15 @@ Scope Builder::stack(Key key) {
     return Scope(this);
 }
 
+Scope Builder::clip(Rect box, Key key) {
+    VNode* node = arena_.make(VType::Stack, key);
+    node->clipChildren = true;
+    node->clip         = box;
+    attach(node);
+    open_.push_back(node);
+    return Scope(this);
+}
+
 Node Builder::rect() {
     VNode* node = arena_.make(VType::Rect);
     attach(node);

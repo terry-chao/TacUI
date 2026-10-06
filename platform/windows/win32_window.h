@@ -14,6 +14,7 @@ enum class EventType {
     MouseLeave,   // x and y are -1
     MouseDown,
     MouseUp,
+    MouseWheel,
     KeyDown,
     Character,   // a translated WM_CHAR; `codepoint` is valid
 };
@@ -27,6 +28,7 @@ struct WindowEvent {
     uint32_t  key = 0;        // KeyDown (virtual key code)
     bool      shift = false;  // KeyDown: modifier state
     uint32_t  codepoint = 0;  // Character: a UTF-16 code unit (BMP codepoint)
+    int32_t   wheel = 0;      // MouseWheel: notches, positive = away from user
 };
 
 class Win32Window {

@@ -44,6 +44,12 @@ struct VNode {
     VNode**  children   = nullptr;
     uint32_t childCount = 0;
 
+    // Clip container (Stack only). Children are clipped to `clip` when painted
+    // *and* when hit tested, so a scrolled list stays a coherent region rather
+    // than a pile of rows spilling over its neighbours.
+    bool clipChildren = false;
+    Rect clip;
+
     // Arena bookkeeping; not part of the description.
     uint32_t childCapacity = 0;
 };

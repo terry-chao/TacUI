@@ -14,6 +14,9 @@ struct RectInstance {
     float  radius;
     float  _pad0;
     float2 _pad1;
+    float4 clip;        // x0, y0, x1, y1 in pixels
+    float  clipEnabled; // 0 = unclipped
+    float  _pad2[3];
 };
 
 StructuredBuffer<RectInstance> gInstances : register(t0);
@@ -33,6 +36,8 @@ struct VSOut {
     float2 halfSz : TEXCOORD1;
     float4 color  : COLOR0;
     float  radius : TEXCOORD2;
+    float4 clip   : TEXCOORD3;
+    float  clipOn : TEXCOORD4;
 };
 
 // Two triangles, CCW. Cull mode is NONE, so winding does not matter.
@@ -61,6 +66,8 @@ VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID)
     o.halfSz = inst.halfSize;
     o.color  = inst.color;
     o.radius = inst.radius;
+    o.clip   = inst.clip;
+    o.clipOn = inst.clipEnabled;
     return o;
 }
 
@@ -73,6 +80,18 @@ float sdRoundRect(float2 p, float2 b, float r)
 
 float4 PSMain(VSOut i) : SV_Target
 {
+    // Scissor. Evaluated on the fragment centre, which is what a hardware
+    // scissor does too — so a clipped edge is hard, not anti-aliased.
+    if (i.clipOn > 0.5)
+    {
+        float2 p = i.pos.xy;
+        if (p.x < i.clip.x || p.x >= i.clip.z ||
+            p.y < i.clip.y || p.y >= i.clip.w)
+        {
+            discard;
+        }
+    }
+
     float r = min(i.radius, min(i.halfSz.x, i.halfSz.y));
     float d = sdRoundRect(i.local, i.halfSz, max(r, 0.0));
 

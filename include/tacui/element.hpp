@@ -76,6 +76,12 @@ struct Element {
     // State slots. M0 addresses them by explicit index; positional binding
     // arrives with the DSL layer (slice F).
     std::vector<int64_t> states;
+
+    // Clip container. A Stack carries no render object, so this doubles as the
+    // node's bounds for hit testing — the region it clips to is the region it
+    // responds in.
+    bool clipsChildren = false;
+    Rect clipBounds;
 };
 
 // ---------------------------------------------------------------------------

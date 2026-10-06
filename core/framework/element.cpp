@@ -213,6 +213,8 @@ ElementPtr mount(const VNode& v, ReconcileStats& stats, ReconcileCtx& ctx) {
     auto e  = std::make_shared<Element>();
     e->type = v.type;
     e->key  = v.key;
+    e->clipsChildren = v.clipChildren;
+    e->clipBounds    = v.clip;
     if (v.type == VType::Rect || v.type == VType::Text) {
         e->render = makeRenderObject(v, ctx, stats);
     }
@@ -281,6 +283,8 @@ void reconcile(Element& e, const VNode& v, ReconcileStats& stats, ReconcileCtx& 
     // Same node: write base values only. The override channel is deliberately
     // left untouched, so an in-flight animation survives the rebuild
     // (plan.md §6.1 criterion 4).
+    e.clipsChildren = v.clipChildren;
+    e.clipBounds    = v.clip;
     if (v.type == VType::Rect || v.type == VType::Text) {
         if (!e.render) {
             e.render = makeRenderObject(v, ctx, stats);

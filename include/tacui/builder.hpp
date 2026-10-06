@@ -75,6 +75,10 @@ public:
     // Opens a container. The first call also establishes the tree root.
     [[nodiscard]] Scope stack(Key key = kNoKey);
 
+    // Opens a container whose subtree is clipped to `box` — both when painted
+    // and when hit tested. Scroll views are built on this.
+    [[nodiscard]] Scope clip(Rect box, Key key = kNoKey);
+
     // Leaves are attached immediately and never pushed onto the open stack.
     Node rect();
     Node text(const char* utf8);
