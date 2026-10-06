@@ -79,7 +79,8 @@
 | 文件 | 用途 |
 |------|------|
 | `tacui-mark-512/1024/2048.png` | 标志位图导出（宽度 × 高度 ≈ 1.9:1） || `tacui-mark-mono-1024.png` | 单色标志 |
-| `tacui-app-icon-1024.png` | 应用图标（深色圆角底板 + 光晕） |
+| `tacui-app-icon-1024.png` | 应用图标（浅色圆角底板 + 蓝色标志） |
+| `tacui-logo-lockup-2048.png` | 手绘完整组合稿（图 + 字，浅色底，已去水印）；图标 / 站点 Logo 的源图 |
 | `tacui-logo-horizontal.png` / `-dark.png` | 横排组合，透明底 / 深色底板 |
 | `tacui-logo-stacked.png` / `-dark.png` | 竖排组合的两种底色 |
 | `tacui-brand-sheet.png` | 品牌总览图（本文件顶部那张） |
