@@ -144,6 +144,21 @@ LRESULT Win32Window::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_CHAR: {
+        // WM_CHAR is the translated character, which is what text input wants;
+        // WM_KEYDOWN above is for editing and navigation keys. Control
+        // characters (0x08 backspace, 0x0D enter, 0x09 tab, 0x1B escape) arrive
+        // here too and are dropped, because the key path already handled them.
+        //
+        // M0 note: this is a single UTF-16 code unit, so astral-plane
+        // characters (emoji) arrive as two halves and are not combined.
+        const uint32_t cp = static_cast<uint32_t>(wParam);
+        if (cp >= 0x20u && cp != 0x7Fu && onEvent_) {
+            onEvent_({ EventType::Character, 0, 0, 0, 0, 0, false, cp });
+        }
+        return 0;
+    }
+
     case WM_ERASEBKGND:
         return 1; // we own the whole client area
 

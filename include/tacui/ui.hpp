@@ -11,6 +11,7 @@
 #include "tacui/glyph_atlas.hpp"
 #include "tacui/text_system.hpp"
 #include "tacui/rhi.hpp"
+#include "tacui/theme.hpp"
 
 namespace tac::ui {
 
@@ -74,6 +75,20 @@ public:
     Ui(const Ui&)            = delete;
     Ui& operator=(const Ui&) = delete;
 
+    // ---- theme -----------------------------------------------------------
+    // Controls read their colours, radii and type sizes from here instead of
+    // hardcoding them (components.md §5).
+    const Theme& theme() const { return theme_; }
+    void         setTheme(const Theme& t) { theme_ = t; invalidate(); }
+
+    // ---- text metrics ----------------------------------------------------
+    // Measured through the same shaper that draws, so a centred label is
+    // centred against the pixels that actually appear. Returns 0 when there
+    // is no text system (init() with fontFamily == nullptr).
+    float measureText(const char* utf8, float sizePx) const;
+    float textAscent(float sizePx) const;
+    float textDescent(float sizePx) const;
+
     // Rebuilds + reconciles if something invalidated the tree. Returns true
     // when a rebuild actually happened — the direct-write path asserts this
     // stays false across animation-only frames (criterion 3).
@@ -105,10 +120,14 @@ public:
     bool isHovered(Key key) const { return key != kNoKey && hoverKey_   == key; }
     bool isPressed(Key key) const { return key != kNoKey && pressedKey_ == key; }
     bool isFocused(Key key) const { return key != kNoKey && focusedKey_ == key; }
+    // True while this node owns the drag capture — a slider thumb, say, that
+    // the pointer may have left while the button is still down.
+    bool isCaptured(Key key) const { return key != kNoKey && capturedKey_ == key; }
 
     Key hoveredKey() const { return hoverKey_; }
     Key pressedKey() const { return pressedKey_; }
     Key focusedKey() const { return focusedKey_; }
+    Key capturedKey() const { return capturedKey_; }
 
     // Moves focus to the next (or previous) focusable node in tree order.
     void focusNext(bool backwards = false);
@@ -146,6 +165,7 @@ private:
     Key hoverKey_   = kNoKey;
     Key pressedKey_ = kNoKey;
     Key focusedKey_ = kNoKey;
+    Key capturedKey_ = kNoKey;
 
     // Last pointer position, kept so the hit test can be redone after a
     // rebuild that moved things under a stationary pointer.
@@ -154,6 +174,8 @@ private:
     bool  pointerInside_ = false;
 
     const NodeBehavior* behaviorOf(Key key) const;
+
+    Theme theme_ = darkTheme();
 
     text::TextSystem textSystem_;
     text::GlyphAtlas atlas_;

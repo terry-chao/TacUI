@@ -15,6 +15,7 @@ enum class EventType {
     MouseDown,
     MouseUp,
     KeyDown,
+    Character,   // a translated WM_CHAR; `codepoint` is valid
 };
 
 struct WindowEvent {
@@ -25,6 +26,7 @@ struct WindowEvent {
     uint32_t  height = 0;
     uint32_t  key = 0;        // KeyDown (virtual key code)
     bool      shift = false;  // KeyDown: modifier state
+    uint32_t  codepoint = 0;  // Character: a UTF-16 code unit (BMP codepoint)
 };
 
 class Win32Window {

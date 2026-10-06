@@ -85,6 +85,7 @@ bool toInputEvent(const platform::WindowEvent& in, ui::InputEvent& out) {
     out.x     = static_cast<float>(in.x);
     out.y     = static_cast<float>(in.y);
     out.shift = in.shift;
+    out.codepoint = in.codepoint;
 
     switch (in.type) {
     case platform::EventType::MouseMove:  out.type = ui::InputEventType::MouseMove;  return true;
@@ -95,6 +96,11 @@ bool toInputEvent(const platform::WindowEvent& in, ui::InputEvent& out) {
         out.type = ui::InputEventType::KeyDown;
         out.code = toKeyCode(in.key);
         return out.code != ui::KeyCode::Unknown;
+    case platform::EventType::Character:
+        // A translated character, not a key: this is what TextInput edits from.
+        out.type = ui::InputEventType::KeyDown;
+        out.code = ui::KeyCode::Character;
+        return out.codepoint != 0;
     default:
         return false;
     }

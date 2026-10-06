@@ -171,6 +171,9 @@ bool Ui::update() {
     if (pressedKey_ != kNoKey && !findByKey(root_, pressedKey_).valid()) {
         pressedKey_ = kNoKey;
     }
+    if (capturedKey_ != kNoKey && !findByKey(root_, capturedKey_).valid()) {
+        capturedKey_ = kNoKey;
+    }
 
     const uint32_t overridesAfter = countOverrides(*root_);
     if (overridesBefore > 0 && overridesAfter > 0) {
@@ -257,6 +260,25 @@ void Ui::registerBehavior(Key key, NodeBehavior behavior) {
     behaviors_[key] = std::move(behavior);
 }
 
+// ---------------------------------------------------------------------------
+// Text metrics
+// ---------------------------------------------------------------------------
+
+float Ui::measureText(const char* utf8, float sizePx) const {
+    if (!textSystem_.valid() || !utf8 || !*utf8) return 0.0f;
+    text::ShapedLine line;
+    if (!textSystem_.shape(utf8, sizePx, line)) return 0.0f;
+    return line.width;
+}
+
+float Ui::textAscent(float sizePx) const {
+    return textSystem_.valid() ? textSystem_.ascent(sizePx) : 0.0f;
+}
+
+float Ui::textDescent(float sizePx) const {
+    return textSystem_.valid() ? textSystem_.descent(sizePx) : 0.0f;
+}
+
 Key Ui::hitTest(float x, float y) const {
     if (!root_) return kNoKey;
     const Element* hit = hitTestRecursive(root_.get(), x, y, behaviors_);
@@ -292,6 +314,14 @@ void Ui::dispatchEvent(const InputEvent& ev) {
         pointerY_      = ev.y;
         pointerInside_ = true;
 
+        // A captured node keeps receiving moves even after the pointer has
+        // left its box, which is the whole point of capture.
+        if (capturedKey_ != kNoKey) {
+            if (const NodeBehavior* b = behaviorOf(capturedKey_); b && b->onDrag) {
+                b->onDrag(ev.x, ev.y);
+            }
+        }
+
         const Key hit = hitTest(ev.x, ev.y);
         if (hit != hoverKey_) {
             hoverKey_ = hit;
@@ -316,11 +346,18 @@ void Ui::dispatchEvent(const InputEvent& ev) {
         const Key hit = hitTest(ev.x, ev.y);
         if (hit == kNoKey) break;
 
+        const NodeBehavior* b = behaviorOf(hit);
         pressedKey_ = hit;
         // Clicking a focusable node moves focus to it, the way every desktop
         // toolkit behaves.
-        if (const NodeBehavior* b = behaviorOf(hit); b && b->focusable) {
+        if (b && b->focusable) {
             focusedKey_ = hit;
+        }
+        // A drag widget takes the capture on press, and gets one immediate
+        // onDrag so clicking a slider track jumps the thumb there.
+        if (b && b->onDrag) {
+            capturedKey_ = hit;
+            b->onDrag(ev.x, ev.y);
         }
         dirty_ = true;
         break;
@@ -331,6 +368,13 @@ void Ui::dispatchEvent(const InputEvent& ev) {
         const Key was = pressedKey_;
         pressedKey_ = kNoKey;
         dirty_      = true;
+
+        if (capturedKey_ != kNoKey) {
+            if (const NodeBehavior* b = behaviorOf(capturedKey_); b && b->onDragEnd) {
+                b->onDragEnd();
+            }
+            capturedKey_ = kNoKey;
+        }
 
         // A press that wandered off the node before release is not a click.
         // Tracking this here is why components do not each reimplement it.

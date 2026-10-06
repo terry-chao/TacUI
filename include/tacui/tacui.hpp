@@ -19,6 +19,10 @@
 #include "tacui/element.hpp"        // Element, NodeRef, OverrideToken — the state
 #include "tacui/ui.hpp"             // Ui                   — the rebuild loop
 
+// ---- controls -------------------------------------------------------------
+#include "tacui/theme.hpp"          // Theme — design tokens
+#include "tacui/controls.hpp"       // Button, Checkbox, Slider, TextInput, …
+
 // ---- text -----------------------------------------------------------------
 #include "tacui/text_system.hpp"    // TextSystem, ShapedLine
 #include "tacui/glyph_atlas.hpp"    // GlyphAtlas

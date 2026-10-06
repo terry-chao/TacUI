@@ -43,6 +43,8 @@ add_library(tacui_core STATIC
     core/framework/element.cpp
     core/framework/ui.cpp
     core/framework/builder.cpp
+    core/theme/theme.cpp
+    core/controls/controls.cpp
 )
 target_link_libraries(tacui_core PUBLIC tacui_flags tacui_rhi tacui_text)
 
@@ -177,6 +179,17 @@ target_link_libraries(textprobe PRIVATE tacui_text)
 # ---------------------------------------------------------------------------
 add_executable(asset_browser examples/asset_browser/main.cpp)
 target_link_libraries(asset_browser PRIVATE tacui_host)
+
+# Control gallery — every L2 control in one window, and the headless
+# input harness that drives them without a window or a GPU.
+add_executable(controls_gallery examples/controls_gallery/main.cpp)
+target_link_libraries(controls_gallery PRIVATE tacui_host)
+
+set_target_properties(controls_gallery PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY         ${CMAKE_BINARY_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG   ${CMAKE_BINARY_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin
+)
 set_target_properties(asset_browser PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY         ${CMAKE_BINARY_DIR}/bin
     RUNTIME_OUTPUT_DIRECTORY_DEBUG   ${CMAKE_BINARY_DIR}/bin

@@ -80,6 +80,17 @@ struct NodeBehavior {
     // Key input while this node has focus.
     std::function<void(const InputEvent&)> onKey;
 
+    // Drag capture. A node that sets `onDrag` takes the capture on MouseDown
+    // and then receives every MouseMove — including moves outside its own
+    // bounds and outside the window — until the button is released. That is
+    // what makes a slider or a scroll thumb work without every control
+    // reimplementing press/leave/release bookkeeping (components.md §2).
+    //
+    // `onDrag` also fires once for the MouseDown itself, so clicking the
+    // middle of a slider track jumps the thumb there.
+    std::function<void(float x, float y)> onDrag;
+    std::function<void()>                 onDragEnd;
+
     bool interactive = false;   // participates in hit testing
     bool focusable   = false;   // participates in the tab order
 };
