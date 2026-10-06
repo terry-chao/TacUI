@@ -1,0 +1,68 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+
+#include <windows.h>
+
+namespace tac::platform {
+
+enum class EventType {
+    Resize,
+    Close,
+    MouseMove,
+    MouseLeave,   // x and y are -1
+    MouseDown,
+    MouseUp,
+    KeyDown,
+};
+
+struct WindowEvent {
+    EventType type = EventType::Close;
+    int32_t   x = 0;          // client-relative, MouseMove / MouseDown / MouseUp
+    int32_t   y = 0;
+    uint32_t  width = 0;      // Resize
+    uint32_t  height = 0;
+    uint32_t  key = 0;        // KeyDown (virtual key code)
+    bool      shift = false;  // KeyDown: modifier state
+};
+
+class Win32Window {
+public:
+    using EventFn = std::function<void(const WindowEvent&)>;
+
+    Win32Window() = default;
+    ~Win32Window();
+
+    Win32Window(const Win32Window&)            = delete;
+    Win32Window& operator=(const Win32Window&) = delete;
+
+    bool create(const wchar_t* title, uint32_t width, uint32_t height);
+    void show();
+
+    HWND handle() const { return hwnd_; }
+    void setEventFn(EventFn fn) { onEvent_ = std::move(fn); }
+
+    // Drains the message queue. Returns false once the window has closed.
+    bool pumpMessages();
+
+    // True when a WM_SIZE arrived since the last call, and reports the new
+    // client size. Clears the flag.
+    bool consumeResize(uint32_t& width, uint32_t& height);
+
+private:
+    static LRESULT CALLBACK wndProcThunk(HWND, UINT, WPARAM, LPARAM);
+    LRESULT handleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
+
+    HWND     hwnd_ = nullptr;
+    EventFn  onEvent_;
+    bool     quit_ = false;
+
+    bool     resized_       = false;
+    uint32_t pendingWidth_  = 0;
+    uint32_t pendingHeight_ = 0;
+
+    bool     trackingLeave_ = false;
+};
+
+} // namespace tac::platform
