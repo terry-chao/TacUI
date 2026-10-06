@@ -1,7 +1,8 @@
 # 组件：放哪里，怎么设计
 
-> 当前状态：**一个组件都没有。** `VType` 只有 Stack / Rect / Text 三种图元，
-> 例子里的「按钮」是 Rect + Text + 手写命中测试拼出来的。
+> 当前状态：**L2 复合控件已落地（12 个）+ 一套主题令牌。**
+> `VType` 仍然只有 Stack / Rect / Text 三种图元 —— L2 控件是纯函数，不新增图元。
+> `TextInput` 先以「宿主持有缓冲」的形态跑通编辑；`ScrollView` / `ListView` 待裁剪支持。
 > 本文给出组件库的分层、归属和落地顺序。
 
 ---
@@ -35,9 +36,11 @@ if (hot != app.buttonHover) { app.buttonHover = hot; app.ui->invalidate(); }
 
 ## 2. 前提：core 需要输入系统 ✅ 已实现
 
-现在 core 里没有：命中测试、事件路由、hover 追踪、焦点、拖拽捕获。全部由应用承担。
+命中测试、hover 追踪、焦点与 Tab 顺序、按下 / 释放、**拖拽捕获**都在 core 里，
+组件只负责读状态与登记行为。字符输入（`WM_CHAR` → `KeyCode::Character`）随
+TextInput 一起接上了。
 
-组件库需要它们全部。
+还没做的：**事件冒泡**（嵌套交互）与**裁剪**（ScrollView / ListView 的前提）。
 
 ### 已实现的形态
 
@@ -71,12 +74,14 @@ b.behavior(key, ui::NodeBehavior{
 |-----|------|
 | **命中测试** | 按**绘制顺序的逆序**（children 先于 parent，后面的兄弟先于前面的）。用 **base bounds**，不用 effective bounds —— override 是 paint-only，不能移动可交互区域（§14.4） |
 | **hover 重建后重算** | 指针没动，但树可能动了，所以 `update()` 在 build **之前**重跑命中测试。这样 build 一次就拿到正确答案，不需要第二遍 |
-| **捕获 / 拖出取消** | MouseDown 记下 `pressedKey_`；MouseUp 时只有命中同一个 key 才算点击。「按下后拖出去再松开」不算 —— 组件不必各自重写这段 |
+| **捕获 / 拖出取消** | MouseDown 记下 `pressedKey_`；MouseUp 时只有命中同一个 key 才算点击。**拖拽捕获**：登记了 `onDrag` 的节点在按下时拿走捕获，松开前一直收 MouseMove —— 滑块靠它实现 |
 | **焦点** | 属于 Element（跨帧稳定），按树序做 Tab 顺序；点击可聚焦节点夺焦（与桌面工具一致）。节点消失时才清焦点 |
 
 **尚未实现：事件冒泡。** 现在命中测试直接返回最上层可交互节点，不向父节点回溯。做嵌套交互控件（List 行里的按钮）时需要补上。
 
-**尚未实现：字符输入。** `KeyCode` 已有 `Character` 与 `codepoint` 字段，但 Win32 层还没接 `WM_CHAR`。这块随 TextInput 一起做。
+**已实现：字符输入。** `WM_CHAR` 在 `platform/windows/win32_window.cpp` 里转发成 `KeyCode::Character`，TextInput 靠它编辑。IME 组合仍是空白。
+
+**尚未实现：裁剪。** 渲染器还没有 clip，所以 `ScrollView` / `ListView` 排在这一项之后。
 
 ---
 
@@ -235,11 +240,11 @@ struct Theme {
 | # | 做什么 | 状态 | 为什么这个顺序 |
 |---|-------|------|--------------|
 | **1** | **输入系统**（命中测试 / 焦点 / 捕获） | ✅ 已做 | 没有它，任何组件都只能像现在的例子一样手写 |
-| **2** | **Theme 令牌** | ⬜ | 组件一写就会需要；事后抽取要改遍所有组件 |
-| **3** | **Button + Label + Checkbox** | ⬜ | 三个最简单的 L2，用来验证整个模型是否成立 |
-| **4** | **把例子改成用组件** | ⬜ | 例子是验收标准 |
-| **5** | **TextInput（L1）** | ⬜ | 第一个真图元，验证「core 侧状态」这条路 |
-| **6** | **ScrollView + ListView（L1）** | ⬜ | 虚拟化，游戏工具链的刚需 |
+| **2** | **Theme 令牌** | ✅ 已做 | 组件一写就会需要；事后抽取要改遍所有组件 |
+| **3** | **Button + Label + Checkbox** | ✅ 已做，且一次铺满 12 个 L2 | 三个最简单的 L2，用来验证整个模型是否成立 |
+| **4** | **把例子改成用组件** | 🟡 新增 `controls_gallery` 作验收；`asset_browser` 仍是手写 | 例子是验收标准 |
+| **5** | **TextInput** | 🟡 编辑 / 选区 / 光标已通；缓冲仍在宿主侧，未搬进 Element | 第一个真图元，验证「core 侧状态」这条路 |
+| **6** | **ScrollView + ListView（L1）** | ⬜ 缺裁剪 | 虚拟化，游戏工具链的刚需 |
 | 7 | 其余 L2 铺开 | ⬜ | 到这一步就是体力活了 |
 
 ### 第 1 步做完了，实际结果是：

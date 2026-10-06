@@ -149,12 +149,13 @@
 
         <article class="tm-card">
           <div class="tm-card-icon"><img src="{{ 'img/icons/components.svg'|url }}" alt="" width="32" height="32"></div>
-          <h3 class="tm-card-title">组件与主题</h3>
+          <h3 class="tm-card-title">12 个基本控件</h3>
           <p class="tm-card-text">
-            组件库的前提是 core 里的输入系统：命中测试、事件冒泡、焦点、拖拽捕获。
-            主题令牌让外观不漂移，组件放在 core，不重复写在各语言绑定里。
+            label / button / checkbox / radio / switch / slider / progress /
+            divider / panel / list item / tabs / text input。组件是函数不是类，
+            状态由输入系统持有 —— 亮起来的区域和响应的区域不可能漂移。
           </p>
-          <a class="tm-card-link" href="{{ 'components/'|url }}">组件设计 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+          <a class="tm-card-link" href="{{ 'controls/'|url }}">控件库 <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
         </article>
       </div>
     </div>
@@ -304,6 +305,9 @@ cmake --build build --config Debug
 # 先跑这个：列表 + 选中 + 详情 + 动画指示条
 .\build\bin\asset_browser.exe
 
+# 控件总览（也是控件层的自测）
+.\build\bin\controls_gallery.exe
+
 # 验收 M0 六条标准
 .\build\bin\m0.exe --selftest</code></pre>
         </div>
@@ -314,6 +318,8 @@ cmake --build build --config Debug
             <li><a href="{{ 'getting-started/'|url }}">构建与运行</a> —— 目标、产物与验证方式</li>
             <li><a href="{{ 'building-ui/'|url }}">写一个 UI</a> —— 一个 include 就是全部公开面</li>
             <li><a href="{{ 'two-paths/'|url }}">两条变更通道</a> —— 641 帧只重建一次是怎么做到的</li>
+            <li><a href="{{ 'controls/'|url }}">控件库</a> —— 12 个基本控件与主题令牌</li>
+            <li><a href="{{ 'integration/'|url }}">嵌入与对接</a> —— 在已有窗口里驱动 TacUI</li>
             <li><a href="{{ 'python/'|url }}">Python 绑定</a> —— 同一份 core，同样的画面</li>
           </ul>
           <p class="tm-quickstart-cta">

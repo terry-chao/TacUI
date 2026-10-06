@@ -56,8 +56,10 @@ nav:
       - 构建与运行: getting-started.md
       - 写一个 UI: building-ui.md
       - 两条变更通道: two-paths.md
+      - 控件库: controls.md
+      - 嵌入与对接: integration.md
   - 组件:
-      - 组件设计: components.md
+      - 组件设计（分层依据）: components.md
   - 参考:
       - C ABI 与 Python 绑定: python.md
       - 品牌与资源: brand.md

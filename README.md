@@ -29,6 +29,7 @@ cmake --build build --config Debug
 | Target | What it is |
 |--------|-----------|
 | `asset_browser` | the example below — run this first |
+| `controls_gallery` | every control in one window; `--input-test` asserts the control layer headlessly |
 | `m0` | the validation harness; `--selftest` asserts every M0 criterion |
 | `tacui.dll` | the C ABI, for host languages (`bindings/python`) |
 | `textprobe` | text stack in isolation, no GPU needed |
@@ -53,6 +54,30 @@ The same panel also exists as
 [`examples/asset_browser/browser.py`](examples/asset_browser/browser.py),
 running against the identical core through the C ABI. The two produce the same
 image; only the host language differs.
+
+## Controls
+
+The basic control set is implemented: label, button (four styles), checkbox,
+radio, switch, slider, progress bar, divider, panel, list item, tabs and text
+input. Each one is a **function**, not a class, and none of them tracks its own
+hover/press/focus state — the input system owns that, so the region that lights
+up is by construction the region that responds.
+
+```cpp
+ui::button(b, kSave, { 20, 20, 96, 30 },
+           { .label = "Save", .style = ui::ButtonStyle::Primary },
+           [&app] { app.save(); });
+
+ui::slider(b, kLod, { 20, 60, 240, 24 },
+           { .value = app.lod, .min = 0.0f, .max = 1.0f },
+           [&app](float v) { app.lod = v; });
+```
+
+Colours, radii and type sizes come from
+[`Theme`](include/tacui/theme.hpp) tokens rather
+than literals, so a skin is one struct. See
+[docs/controls.md](docs/controls.md), and run `controls_gallery` — it is both
+the gallery and the test (`--input-test` is 27 assertions, no window, no GPU).
 
 ```cpp
 ui::VNode* buildUi(ui::Builder& b, App& app) {
