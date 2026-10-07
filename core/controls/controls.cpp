@@ -142,6 +142,7 @@ void appendUtf8(std::string& out, uint32_t cp) {
 // ---------------------------------------------------------------------------
 
 void label(Builder& b, Key key, Rect box, const LabelProps& p) {
+    auto root = b.stack(box);
     const Theme& t    = b.ui().theme();
     const float  size = p.size > 0.0f ? p.size : t.fontMd;
     const Color  col  = isSet(p.color) ? p.color : (p.strong ? t.textStrong : t.textDim);
@@ -153,6 +154,7 @@ void label(Builder& b, Key key, Rect box, const LabelProps& p) {
 // ---------------------------------------------------------------------------
 
 void button(Builder& b, Key key, Rect box, const ButtonProps& p, ClickFn onClick) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     const Ui&    ui      = b.ui();
     const bool   enabled = p.enabled;
@@ -202,6 +204,7 @@ void button(Builder& b, Key key, Rect box, const ButtonProps& p, ClickFn onClick
 // ---------------------------------------------------------------------------
 
 void checkbox(Builder& b, Key key, Rect box, const CheckboxProps& p, BoolFn onChange) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     const bool   enabled = p.enabled;
     const bool   hot     = enabled && b.ui().isHovered(key);
@@ -239,6 +242,7 @@ void checkbox(Builder& b, Key key, Rect box, const CheckboxProps& p, BoolFn onCh
 // ---------------------------------------------------------------------------
 
 void radio(Builder& b, Key key, Rect box, const RadioProps& p, ClickFn onSelect) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     const bool   enabled = p.enabled;
     const bool   hot     = enabled && b.ui().isHovered(key);
@@ -271,6 +275,7 @@ void radio(Builder& b, Key key, Rect box, const RadioProps& p, ClickFn onSelect)
 // ---------------------------------------------------------------------------
 
 void toggle(Builder& b, Key key, Rect box, const SwitchProps& p, BoolFn onChange) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     const bool   enabled = p.enabled;
     const bool   hot     = enabled && b.ui().isHovered(key);
@@ -308,6 +313,7 @@ void toggle(Builder& b, Key key, Rect box, const SwitchProps& p, BoolFn onChange
 // ---------------------------------------------------------------------------
 
 void slider(Builder& b, Key key, Rect box, const SliderProps& p, FloatFn onChange) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     const Ui&    ui      = b.ui();
     const bool   enabled = p.enabled;
@@ -370,6 +376,7 @@ void slider(Builder& b, Key key, Rect box, const SliderProps& p, FloatFn onChang
 // ---------------------------------------------------------------------------
 
 void progressBar(Builder& b, Key key, Rect box, const ProgressProps& p) {
+    auto root = b.stack(box);
     const Theme& t   = b.ui().theme();
     const float  r   = std::min(box.h * 0.5f, t.radiusSm);
     const float  t01 = clampf(p.value, 0.0f, 1.0f);
@@ -386,6 +393,7 @@ void progressBar(Builder& b, Key key, Rect box, const ProgressProps& p) {
 // ---------------------------------------------------------------------------
 
 void divider(Builder& b, Key key, Rect box, const DividerProps& p) {
+    auto root = b.stack(box);
     const Theme& t = b.ui().theme();
     const Color  c = isSet(p.color) ? p.color : t.border;
     rect(b, box, 0.0f, c, key);
@@ -414,6 +422,7 @@ Scope panel(Builder& b, Key key, Rect box, const PanelProps& p) {
 // ---------------------------------------------------------------------------
 
 void listItem(Builder& b, Key key, Rect box, const ListItemProps& p, ClickFn onClick) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     const Ui&    ui      = b.ui();
     const bool   enabled = p.enabled;
@@ -457,6 +466,7 @@ void listItem(Builder& b, Key key, Rect box, const ListItemProps& p, ClickFn onC
 void tabs(Builder& b, Key firstKey, Rect box, const TabsProps& p, IndexFn onSelect) {
     if (!p.labels || p.count <= 0) return;
 
+    auto root = b.stack(box);
     const Theme& t     = b.ui().theme();
     const Ui&    ui    = b.ui();
     const float  segW  = box.w / static_cast<float>(p.count);
@@ -523,6 +533,7 @@ void scrollBar(Builder& b, Key key, Rect box, float& offset,
     const float  maxOff = maxScroll(p.contentHeight, box.h);
     if (maxOff <= 0.0f) return;   // nothing overflows: no bar, no behaviour
 
+    auto root = b.stack(box);
     const float thumbH = clampf(box.h * box.h / std::max(p.contentHeight, 1.0f),
                                 std::min(p.minThumb, box.h), box.h);
     const float travel = std::max(box.h - thumbH, 1.0f);
@@ -556,6 +567,7 @@ void listView(Builder& b, Key key, Rect box, const ListViewProps& p,
               ListViewState& state, SelectFn onSelect) {
     if (!p.labels || p.count <= 0) return;
 
+    auto root = b.stack(box);
     const Theme& t     = b.ui().theme();
     Ui*          ui    = &b.ui();
     const float  pitch = p.rowHeight + p.rowGap;
@@ -609,6 +621,7 @@ void listView(Builder& b, Key key, Rect box, const ListViewProps& p,
 
 void textInput(Builder& b, Key key, Rect box, const TextInputProps& p,
                TextInputState& state, TextFn onChange) {
+    auto root = b.stack(box);
     const Theme& t       = b.ui().theme();
     Ui&          ui      = b.ui();
     Ui*          uiPtr   = &ui;

@@ -314,6 +314,173 @@ ui::VNode* buildUi(ui::Builder& b, App& app) {
 // Headless input harness
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Layout harness (M2: relative containers)
+//
+// A dedicated tree so the assertions read as a spec: what a row/column does to
+// its children, verified through the public `find(...).bounds()` surface.
+// ---------------------------------------------------------------------------
+
+ui::InputEvent mouse(ui::InputEventType type, float x, float y);
+
+namespace lay {
+
+constexpr ui::Key kCol  = 900;
+constexpr ui::Key kRow  = 920;
+constexpr ui::Key kRowBottom = 930;
+constexpr ui::Key kRowPanel  = 940;
+constexpr ui::Key kRowText   = 960;
+constexpr ui::Key kRowButton = 980;
+
+constexpr ui::Key kA = 901, kB = 902, kC = 903;
+constexpr ui::Key kD = 921, kE = 922;
+constexpr ui::Key kF = 931;
+constexpr ui::Key kPanel      = 941, kPanelLabel = 942;
+constexpr ui::Key kRawText    = 961;
+constexpr ui::Key kButton     = 981;
+
+int buttonClicks = 0;
+
+ui::VNode* build(ui::Builder& b) {
+    auto root = b.stack();
+
+    // Column: frame 400x300, padding 10, gap 10 — fixed, gap, then flex.
+    {
+        auto col = b.column({ 0.0f, 0.0f, 400.0f, 300.0f },
+                            { .gap = 10.0f, .padding = ui::EdgeInsets::all(10.0f) },
+                            kCol);
+        b.rect().width(100.0f).height(50.0f).key(kA).color(ui::rgb(200, 80, 80));
+        b.rect().width(100.0f).height(50.0f).key(kB).color(ui::rgb(80, 200, 80));
+        b.rect().width(60.0f).height(30.0f).flex(1.0f).key(kC).color(ui::rgb(80, 80, 200));
+    }
+
+    // Row: fixed child then a flex child that takes the rest.
+    {
+        auto row = b.row({ 0.0f, 400.0f, 300.0f, 100.0f }, {}, kRow);
+        b.rect().width(100.0f).height(40.0f).key(kD).color(ui::rgb(200, 200, 80));
+        b.rect().height(40.0f).flex(1.0f).key(kE).color(ui::rgb(80, 200, 200));
+    }
+
+    // Cross-axis alignment: bottom of a 100-tall row.
+    {
+        auto row = b.row({ 0.0f, 520.0f, 200.0f, 100.0f }, {}, kRowBottom);
+        b.rect().width(50.0f).height(20.0f).key(kF).align(0.0f, 1.0f)
+            .color(ui::rgb(200, 120, 200));
+    }
+
+    // A panel authored far from the origin, placed by a row: its whole subtree
+    // must move as one.
+    {
+        auto row = b.row({ 400.0f, 400.0f, 300.0f, 100.0f }, {}, kRowPanel);
+        auto p = ui::panel(b, kPanel, { 900.0f, 900.0f, 120.0f, 60.0f });
+        ui::label(b, kPanelLabel, { 910.0f, 910.0f, 100.0f, 20.0f },
+                  { .text = "in a panel" });
+    }
+
+    // A bare text node takes its intrinsic (measured) width in a row.
+    {
+        auto row = b.row({ 400.0f, 520.0f, 300.0f, 40.0f }, {}, kRowText);
+        b.text("intrinsic").size(16.0f).color(ui::rgb(230, 230, 240)).key(kRawText);
+    }
+
+    // A control in a row keeps its authored size but lands where the row puts
+    // it, and stays clickable there.
+    {
+        auto row = b.row({ 700.0f, 520.0f, 300.0f, 40.0f }, {}, kRowButton);
+        ui::button(b, kButton, { 1200.0f, 800.0f, 120.0f, 32.0f },
+                   { .label = "Placed" },
+                   [] { ++buttonClicks; });
+    }
+
+    return b.root();
+}
+
+} // namespace lay
+
+int runLayoutTest() {
+    ui::Ui ui;
+    if (!ui.init([](ui::BuildContext& ctx) {
+            ui::Builder b(ctx);
+            return lay::build(b);
+        })) {
+        std::fprintf(stderr, "fatal: layout test init failed\n");
+        return 1;
+    }
+    ui.update();
+
+    bool ok = true;
+    auto check = [&ok](bool cond, const char* what) {
+        std::printf("  [%s] %s\n", cond ? "PASS" : "FAIL", what);
+        if (!cond) ok = false;
+    };
+    auto near = [](float a, float b) { return std::fabs(a - b) < 0.5f; };
+    auto box  = [&ui](ui::Key k) { return ui.find(k).bounds(); };
+
+    std::printf("\n--- layout self-test ---\n");
+
+    // --- column: padding, gap, flex ---------------------------------------
+    {
+        const Rect a = box(lay::kA);
+        check(near(a.x, 10.0f) && near(a.y, 10.0f) &&
+              near(a.w, 100.0f) && near(a.h, 50.0f),
+              "column places the first child at the padded origin");
+
+        const Rect b2 = box(lay::kB);
+        check(near(b2.y, 70.0f), "column advances by child height + gap");
+
+        const Rect c = box(lay::kC);
+        check(near(c.y, 130.0f) && near(c.h, 160.0f),
+              "flex child fills the leftover main-axis space");
+    }
+
+    // --- row: fixed + flex -------------------------------------------------
+    {
+        const Rect d = box(lay::kD);
+        const Rect e = box(lay::kE);
+        check(near(d.x, 0.0f) && near(d.y, 400.0f) && near(d.w, 100.0f),
+              "row places the first child at the frame origin");
+        check(near(e.x, 100.0f) && near(e.w, 200.0f),
+              "row flex child takes exactly the remaining width");
+    }
+
+    // --- cross-axis alignment ---------------------------------------------
+    {
+        const Rect f = box(lay::kF);
+        check(near(f.y, 600.0f), "align(0,1) pins the child to the bottom edge");
+    }
+
+    // --- an absolute subtree is translated as a whole ---------------------
+    {
+        const Rect l = box(lay::kPanelLabel);
+        check(near(l.x, 410.0f) && std::fabs(l.y - 410.0f) < 6.0f,
+              "a panel authored far away lands at the row slot");
+    }
+
+    // --- intrinsic text width ---------------------------------------------
+    {
+        const Rect t = box(lay::kRawText);
+        const float measured = ui.measureText("intrinsic", 16.0f);
+        check(near(t.w, measured) && measured > 0.0f,
+              "a bare text node takes its measured width");
+    }
+
+    // --- a control lands and responds where the row put it ----------------
+    {
+        const Rect btn = box(lay::kButton);
+        check(near(btn.x, 700.0f) && near(btn.y, 520.0f) && near(btn.w, 120.0f),
+              "a control keeps its size but lands at the row slot");
+
+        ui.dispatchEvent(mouse(ui::InputEventType::MouseDown, 760.0f, 536.0f));
+        ui.dispatchEvent(mouse(ui::InputEventType::MouseUp, 760.0f, 536.0f));
+        ui.update();
+        check(lay::buttonClicks == 1,
+              "hit testing uses the laid-out position, not the authored one");
+    }
+
+    std::printf("--- %s ---\n", ok ? "ALL PASS" : "FAILURES PRESENT");
+    return ok ? 0 : 2;
+}
+
 ui::InputEvent moveTo(float x, float y) {
     ui::InputEvent e;
     e.type = ui::InputEventType::MouseMove;
@@ -596,6 +763,7 @@ int main(int argc, char** argv) {
     const char* capturePath = nullptr;
     double      maxSeconds  = 0.0;
     bool        inputTest   = false;
+    bool        layoutTest  = false;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--capture") == 0 && i + 1 < argc) {
@@ -604,8 +772,12 @@ int main(int argc, char** argv) {
             maxSeconds = std::atof(argv[++i]);
         } else if (std::strcmp(argv[i], "--input-test") == 0) {
             inputTest = true;
+        } else if (std::strcmp(argv[i], "--layout-test") == 0) {
+            layoutTest = true;
         }
     }
+
+    if (layoutTest) return runLayoutTest();
 
     App    app;
     ui::Ui ui;
