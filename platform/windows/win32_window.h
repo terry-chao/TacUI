@@ -86,6 +86,14 @@ private:
     uint32_t pendingWidth_  = 0;
     uint32_t pendingHeight_ = 0;
 
+    // Set while Windows' modal move/size loop is running. During that loop the
+    // host's frame loop cannot run, so WM_SIZE only records the size and a
+    // timer applies it — doing the swapchain work inline would stall the very
+    // loop that is moving the window, which reads as the window stuttering.
+    bool     inSizeMove_    = false;
+    uint32_t appliedWidth_  = 0;
+    uint32_t appliedHeight_ = 0;
+
     bool     trackingLeave_ = false;
 };
 

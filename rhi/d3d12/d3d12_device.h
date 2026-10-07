@@ -23,6 +23,7 @@ public:
 
     void beginFrame(Color clear) override;
     void endFrame() override;
+    void setVSync(bool enabled) override { vsync_ = enabled; }
     void resize(uint32_t width, uint32_t height) override;
 
     void reportDiagnostics() override;
@@ -73,6 +74,7 @@ private:
 
     uint32_t rtvStride_   = 0;
     uint32_t frameIndex_  = 0;
+    bool     vsync_       = true;
     uint32_t width_       = 0;
     uint32_t height_      = 0;
     uint32_t bufferCount_ = 2;

@@ -207,10 +207,15 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         lastW = w;
         lastH = h;
 
-        device->resize(w, h);
         control.width_  = static_cast<uint32_t>(std::lround(w / scale));
         control.height_ = static_cast<uint32_t>(std::lround(h / scale));
 
+        // Do not wait for vblank here. A WM_SIZE arrives for every step of the
+        // drag; a vsync wait per step would make the content lag one size
+        // behind the window, which is exactly what shows up as jitter. The main
+        // loop restores vsync as soon as it runs again.
+        device->resize(w, h);
+        device->setVSync(false);
         device->beginFrame(opts.clear);
         ui.paint(*device);
         device->endFrame();
@@ -247,6 +252,7 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         ui.update();
 
         const bool doCapture = control.captureRequested_;
+        device->setVSync(true);
         device->beginFrame(opts.clear);
         ui.paint(*device);
         if (doCapture) device->captureFrame();

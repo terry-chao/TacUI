@@ -389,7 +389,8 @@ void D3D12Device::endFrame() {
     ID3D12CommandList* lists[] = { cmd_.Get() };
     queue_->ExecuteCommandLists(1, lists);
 
-    check(swapchain_->Present(1, 0), "Present");   // vsync
+    // vsync unless the host turned it off for an interactive resize
+    check(swapchain_->Present(vsync_ ? 1u : 0u, 0), "Present");
 
     fenceValues_[frameIndex_] = ++fenceCounter_;
     check(queue_->Signal(fence_.Get(), fenceValues_[frameIndex_]), "Signal");

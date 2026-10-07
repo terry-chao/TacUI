@@ -5,6 +5,7 @@ namespace tac::platform {
 namespace {
 
 constexpr const wchar_t* kClassName = L"TacUIWindowClass";
+constexpr UINT_PTR       kResizeTimerId = 1;
 
 inline int32_t mouseAxis(LPARAM lp) {
     return static_cast<int32_t>(static_cast<int16_t>(LOWORD(lp)));
@@ -130,12 +131,47 @@ LRESULT Win32Window::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             pendingWidth_  = w;
             pendingHeight_ = h;
             if (onEvent_) onEvent_({ EventType::Resize, 0, 0, w, h, 0, false });
-            // Resize + present right here: during a border drag this runs from
-            // inside the modal loop, when the host's own frame loop cannot.
-            if (onResize_) onResize_(w, h);
+
+            // Outside a drag the frame loop is free, so apply it now. During a
+            // drag the timer below does it instead — see inSizeMove_.
+            if (!inSizeMove_ && onResize_) {
+                appliedWidth_  = w;
+                appliedHeight_ = h;
+                onResize_(w, h);
+            }
         }
         return 0;
     }
+
+    case WM_ENTERSIZEMOVE:
+        // Windows is about to run its modal move/size loop. Everything here has
+        // to be cheap or the window visibly stutters while being dragged.
+        inSizeMove_ = true;
+        SetTimer(hwnd_, kResizeTimerId, 1, nullptr);
+        return 0;
+
+    case WM_EXITSIZEMOVE:
+        inSizeMove_ = false;
+        KillTimer(hwnd_, kResizeTimerId);
+        if (onResize_ && pendingWidth_ > 0 && pendingHeight_ > 0 &&
+            (pendingWidth_ != appliedWidth_ || pendingHeight_ != appliedHeight_)) {
+            appliedWidth_  = pendingWidth_;
+            appliedHeight_ = pendingHeight_;
+            onResize_(pendingWidth_, pendingHeight_);
+        }
+        return 0;
+
+    case WM_TIMER:
+        if (wParam == kResizeTimerId) {
+            if (onResize_ && pendingWidth_ > 0 && pendingHeight_ > 0 &&
+                (pendingWidth_ != appliedWidth_ || pendingHeight_ != appliedHeight_)) {
+                appliedWidth_  = pendingWidth_;
+                appliedHeight_ = pendingHeight_;
+                onResize_(pendingWidth_, pendingHeight_);
+            }
+            return 0;
+        }
+        break;
 
     case WM_MOUSEMOVE: {
         // Arm WM_MOUSELEAVE so hover state can be cleared when the pointer

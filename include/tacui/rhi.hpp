@@ -73,6 +73,12 @@ public:
     // Ends recording, submits, and presents (vsync).
     virtual void endFrame() = 0;
 
+    // Enables or disables waiting for vblank when presenting. A host turns this
+    // *off* while the user is interactively resizing: a vsync wait per size step
+    // makes the window lag the pointer, so the desktop keeps stretching a frame
+    // that is one size behind — which reads as the content jittering.
+    virtual void setVSync(bool /*enabled*/) {}
+
     // Recreates size-dependent resources. Safe to call every frame; no-ops
     // when the dimensions are unchanged.
     virtual void resize(uint32_t width, uint32_t height) = 0;
