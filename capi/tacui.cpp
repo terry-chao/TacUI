@@ -8,6 +8,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "tacui/builder.hpp"
@@ -81,6 +82,14 @@ struct tui_ui {
     std::vector<ui::Scope> scopes;
     std::vector<uint8_t>   frameKind;           // TUI_NODE_* per open frame
     ui::VNode*             pendingLeaf = nullptr;
+
+    // Cross-frame state for the stateful controls, keyed by the control's own
+    // key. The controls capture a reference to these inside their behaviour, so
+    // the storage must outlive the build — unordered_map keeps element
+    // references stable across rehashes.
+    std::unordered_map<uint64_t, ui::TextInputState>  textStates;
+    std::unordered_map<uint64_t, ui::ScrollViewState> scrollStates;
+    std::unordered_map<uint64_t, ui::ListViewState>   listStates;
 
     // Handle table.
     std::vector<HandleEntry> handles;
@@ -403,6 +412,122 @@ void tui_panel(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
     // tui_push(TUI_NODE_STACK, key). Children pushed next land inside it.
     ui->scopes.push_back(ui::panel(*b, key, Rect{ x, y, w, h }, p));
     ui->frameKind.push_back(static_cast<uint8_t>(TUI_NODE_STACK));
+}
+
+// ---------------------------------------------------------------------------
+// Build plane — stateful controls
+// ---------------------------------------------------------------------------
+
+void tui_text_input(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                    const char* placeholder, const char* suffix, float size,
+                    int32_t enabled, int32_t max_length,
+                    tui_text_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_text_input");
+    if (!b) return;
+    ui::TextInputProps p;
+    p.placeholder = placeholder ? placeholder : "";
+    p.suffix      = suffix ? suffix : "";
+    p.size        = size;
+    p.enabled     = enabled != 0;
+    p.maxLength   = max_length;
+
+    ui::TextFn fn;
+    if (cb) fn = [cb, user](const std::string& s) { cb(user, s.c_str()); };
+
+    // The library owns the editing state; `operator[]` keeps its address stable
+    // for the behaviour the control captures.
+    ui::textInput(*b, key, Rect{ x, y, w, h }, p, ui->textStates[key],
+                  std::move(fn));
+}
+
+int32_t tui_text_get(tui_ui* ui, uint64_t key, char* out, int32_t cap) {
+    if (!ui) return 0;
+    const auto it = ui->textStates.find(key);
+    const char* s = (it == ui->textStates.end()) ? "" : it->second.text.c_str();
+    const int32_t n = static_cast<int32_t>(std::strlen(s));
+    if (out && cap > 0) {
+        const int32_t copy = (n < cap - 1) ? n : (cap - 1);
+        std::memcpy(out, s, static_cast<size_t>(copy));
+        out[copy] = '\0';
+    }
+    return n;
+}
+
+void tui_text_set(tui_ui* ui, uint64_t key, const char* utf8) {
+    if (!ui) return;
+    ui::TextInputState& st = ui->textStates[key];
+    st.text   = utf8 ? utf8 : "";
+    st.cursor = static_cast<int>(st.text.size());
+    st.anchor = st.cursor;
+    ui->ui.invalidate();
+}
+
+void tui_scroll_view(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                     float content_height, float line_step) {
+    ui::Builder* b = activeBuilder(ui, "tui_scroll_view");
+    if (!b) return;
+    ui::ScrollViewProps p;
+    p.contentHeight = content_height;
+    p.lineStep      = line_step;
+
+    ui::Scope s = ui::scrollView(*b, key, Rect{ x, y, w, h },
+                                 ui->scrollStates[key], p);
+    ui->scopes.push_back(std::move(s));
+    ui->frameKind.push_back(static_cast<uint8_t>(TUI_NODE_STACK));
+}
+
+float tui_scroll_offset(tui_ui* ui, uint64_t key) {
+    if (!ui) return 0.0f;
+    const auto it = ui->scrollStates.find(key);
+    return it == ui->scrollStates.end() ? 0.0f : it->second.offset;
+}
+
+void tui_scroll_set_offset(tui_ui* ui, uint64_t key, float offset) {
+    if (!ui) return;
+    ui->scrollStates[key].offset = offset;
+    ui->ui.invalidate();
+}
+
+void tui_scroll_bar(tui_ui* ui, uint64_t bar_key, uint64_t scroll_key,
+                    float x, float y, float w, float h,
+                    float content_height, float width, float min_thumb) {
+    ui::Builder* b = activeBuilder(ui, "tui_scroll_bar");
+    if (!b) return;
+    ui::ScrollBarProps p;
+    p.contentHeight = content_height;
+    p.width         = width;
+    p.minThumb      = min_thumb;
+    ui::scrollBar(*b, bar_key, Rect{ x, y, w, h },
+                  ui->scrollStates[scroll_key].offset, p);
+}
+
+void tui_list_view(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                   const char* const* labels, const char* const* secondary,
+                   int32_t count, int32_t selected, float row_height,
+                   float row_gap, int32_t show_bar, uint64_t row_key_base,
+                   tui_index_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_list_view");
+    if (!b) return;
+    ui::ListViewProps p;
+    p.labels     = labels;
+    p.secondary  = secondary;
+    p.count      = count;
+    p.selected   = selected;
+    p.rowHeight  = row_height;
+    p.rowGap     = row_gap;
+    p.showBar    = show_bar != 0;
+    p.rowKeyBase = row_key_base;
+
+    ui::SelectFn fn;
+    if (cb) fn = [cb, user](int i) { cb(user, i); };
+    ui::listView(*b, key, Rect{ x, y, w, h }, p, ui->listStates[key],
+                 std::move(fn));
+}
+
+float tui_list_offset(tui_ui* ui, uint64_t key) {
+    if (!ui) return 0.0f;
+    const auto it = ui->listStates.find(key);
+    return it == ui->listStates.end() ? 0.0f : it->second.offset;
 }
 
 // ---------------------------------------------------------------------------

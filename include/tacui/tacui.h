@@ -201,6 +201,56 @@ TUI_API void tui_panel(tui_ui* ui, uint64_t key,
                        float x, float y, float w, float h,
                        uint32_t fill, float radius, int32_t border);
 
+// --- stateful controls -----------------------------------------------------
+//
+// textInput / scrollView / listView keep cross-frame state (an edit buffer, a
+// scroll offset). Their C++ controls hold a reference to that state inside the
+// behaviour they register, so it has to outlive the build — the library owns it
+// here, keyed by the control's own key, and the host reads it back through the
+// accessors below rather than passing a buffer in.
+
+typedef void (*tui_text_fn)(void* user, const char* utf8);
+
+TUI_API void tui_text_input(tui_ui* ui, uint64_t key,
+                            float x, float y, float w, float h,
+                            const char* placeholder, const char* suffix,
+                            float size, int32_t enabled, int32_t max_length,
+                            tui_text_fn cb, void* user);
+
+// Copies the field's current text into `out` (NUL-terminated) and returns its
+// byte length. Pass out = NULL to query the length. `cap` includes the NUL.
+TUI_API int32_t tui_text_get(tui_ui* ui, uint64_t key, char* out, int32_t cap);
+
+// Replaces the field's text; marks the tree dirty.
+TUI_API void tui_text_set(tui_ui* ui, uint64_t key, const char* utf8);
+
+// Opens a scrollable region (a clip container) keyed by `key`; close it with
+// tui_pop, then draw the bar with tui_scroll_bar. Read tui_scroll_offset to
+// place the content.
+TUI_API void tui_scroll_view(tui_ui* ui, uint64_t key,
+                             float x, float y, float w, float h,
+                             float content_height, float line_step);
+
+TUI_API float tui_scroll_offset(tui_ui* ui, uint64_t key);
+TUI_API void  tui_scroll_set_offset(tui_ui* ui, uint64_t key, float offset);
+
+// `bar_key` owns the bar's hit region; `scroll_key` names the scroll view whose
+// offset it drives (that is where the shared state lives).
+TUI_API void tui_scroll_bar(tui_ui* ui, uint64_t bar_key, uint64_t scroll_key,
+                            float x, float y, float w, float h,
+                            float content_height, float width, float min_thumb);
+
+TUI_API void tui_list_view(tui_ui* ui, uint64_t key,
+                           float x, float y, float w, float h,
+                           const char* const* labels,
+                           const char* const* secondary,
+                           int32_t count, int32_t selected,
+                           float row_height, float row_gap, int32_t show_bar,
+                           uint64_t row_key_base,
+                           tui_index_fn cb, void* user);
+
+TUI_API float tui_list_offset(tui_ui* ui, uint64_t key);
+
 // ---------------------------------------------------------------------------
 // Input injection
 // ---------------------------------------------------------------------------
