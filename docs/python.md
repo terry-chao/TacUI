@@ -74,6 +74,69 @@ python demo.py --capture out.png
 
 ---
 
+## 控件也在 ABI 里
+
+控件层是 core 的（[组件设计](components.md) §4），所以宿主语言拿到的是**同一套控件**，
+而不是各写一遍 hover / 命中测试。每个 L2 控件一个 `tui_*` 函数，Python 侧包成方法：
+
+```python
+with ui.stack():
+    ui.label(0, (20, 20, 400, 28), "Controls from Python", size=22, strong=True)
+    ui.button(K_OK, (20, 70, 120, 32), "Bake",
+              style=tacui.BUTTON_PRIMARY, on_click=app.bake)
+    ui.checkbox(K_SNAP, (20, 120, 200, 24), "Snap to grid",
+                checked=app.snap, on_change=app.set_snap)
+    ui.slider(K_LOD, (20, 160, 240, 24), value=app.lod, on_change=app.set_lod)
+    ui.tabs(K_TABS, (20, 200, 240, 32), ["Diff", "Scene"], selected=app.tab,
+            on_select=app.set_tab)
+
+    with ui.panel(K_PANEL, (300, 70, 200, 120)):     # container：with 进出
+        ui.label(0, (316, 86, 160, 20), "inside a panel", size=13)
+```
+
+颜色还是 `rgba8`（低位是 R）；**alpha 为 0 表示"不设置，用主题"**。
+回调通过 ABI 的 `user` 指针 + 宿主侧闭包路由回 Python 对象 —— C ABI 从不持有语言的闭包。
+
+已导出：`label` `button` `checkbox` `radio` `toggle` `slider` `progress` `divider`
+`tabs` `panel`。**待导出**：`textInput`（需要宿主持有缓冲）与 `scrollView` /
+`listView`（需要滚动几何），它们依赖下面这两个刚补上的能力，但状态迁移还没做。
+
+---
+
+## 无窗口驱动：输入注入与 `tui_update`
+
+嵌入宿主自己拥有窗口循环时，以前**没有**把事件送进框架的入口；headless 测试
+更是既不能注入输入、也不能触发重建。这两个缺口补上了：
+
+```python
+ui.dispatch(tacui.EVENT_MOUSE_DOWN, 60.0, 86.0)   # 注入一个事件
+ui.dispatch(tacui.EVENT_CHAR, codepoint=ord("A")) # 字符
+ui.dispatch(tacui.EVENT_MOUSE_WHEEL, 60.0, 86.0, wheel=-3.0)
+ui.update()                                       # 脏则重建，返回是否重建
+```
+
+- `tui_dispatch_event` 走的是**和运行循环同一条**路径（`ui.dispatchEvent`），
+  所以合成事件和真实事件行为一致；
+- `tui_update` 让宿主自己驱动「脏则重建」，`tui_run` 每帧内部也调它。
+
+这让控件层可以**无窗口、无 GPU** 地验证：
+
+```powershell
+python bindings\python\controls_test.py
+```
+
+```
+[PASS] a label reached the retained tree
+[PASS] a panel nested its children
+[PASS] clicking the button fires the Python callback
+[PASS] clicking the checkbox flips the host value
+[PASS] dragging the slider to the right reaches the end
+[PASS] clicking a tab segment reports its index
+[PASS] a disabled button does not fire
+```
+
+---
+
 ## 写第二个宿主语言时暴露的 ABI 问题
 
 这部分反馈比测试更有价值 —— 都是**只有换语言才会暴露**的问题：

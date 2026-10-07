@@ -21,6 +21,8 @@
 `ListView` 与**相对布局（row / column）**已落地（见 [布局](layout.md)）。
 M2 仍缺通用约束布局与动画系统，M1 的统一 draw list、解析 AA 贝塞尔与
 HarfBuzz / ICU 也尚未做。
+M4 的 Python 绑定已推进到**控件层**：L2 控件经 C ABI 导出，宿主用同一套控件，
+并能注入事件做无窗口验证（见 [C ABI 与 Python 绑定](python.md)）。
 
 ---
 

@@ -103,6 +103,13 @@ do the rest; each control wraps itself in one container, so it occupies exactly
 one slot. Absolute boxes still work exactly as before. See
 [docs/layout.md](docs/layout.md).
 
+The same controls are exported over the C ABI (`tui_button`, `tui_checkbox`,
+`tui_slider`, …), so a host language gets the identical widgets instead of
+re-implementing hover and hit testing. `tui_dispatch_event` and `tui_update`
+let an embedding host — or a windowless test — drive the framework directly;
+`bindings/python/controls_test.py` exercises the whole layer with no window and
+no GPU.
+
 ```cpp
 ui::button(b, kSave, { 20, 20, 96, 30 },
            { .label = "Save", .style = ui::ButtonStyle::Primary },

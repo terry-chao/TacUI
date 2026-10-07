@@ -101,9 +101,11 @@ device->endFrame();
 如果对接方不是 C++（tamias 的插件是 C#），走 `capi/` 的 C ABI：
 
 * 构建与直写通道已经导出（代际句柄 + `tui_*`）；
-* 控件层的导出还没做 —— 计划是每个 L2 控件一个 `tui_*` 函数（约 12 个），
-  在 `capi/tacui.cpp` 里按 `docs/components.md` §4 的约定加。
-
-在此之前，C# 侧可以先用 builder 图元（`tui_node_*`）自己拼，
-但那就回到「每个应用重写一遍 hover / 命中测试」的老问题 —— 所以控件导出的优先级
-取决于插件是否需要自绘面板。
+* **控件层已导出**：`tui_label` / `tui_button` / `tui_checkbox` / `tui_radio` /
+  `tui_toggle` / `tui_slider` / `tui_progress` / `tui_divider` / `tui_tabs` /
+  `tui_panel`，宿主语言拿到的是和 C++ 同一套控件，不用自己重写 hover / 命中测试
+  （见 [C ABI 与 Python 绑定](python.md)）；
+* **输入注入与 `tui_update` 已导出**：`tui_dispatch_event` 把事件走
+  `ui.dispatchEvent` 同一条路径送进框架，宿主可以自己驱动帧循环或做 headless 测试；
+* 还没导出：`textInput` / `scrollView` / `listView` —— 它们需要宿主持有缓冲或滚动状态，
+  状态迁移是下一步。
