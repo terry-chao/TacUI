@@ -66,6 +66,12 @@ public:
     using ResizeFn = std::function<void(uint32_t width, uint32_t height)>;
     void setResizeFn(ResizeFn fn) { onResize_ = std::move(fn); }
 
+    // Called when Windows' modal move/size loop starts and ends. While it is
+    // active the window size changes continuously, so the host keeps the
+    // swapchain exactly matched to it.
+    using DragFn = std::function<void(bool dragging)>;
+    void setDragFn(DragFn fn) { onDrag_ = std::move(fn); }
+
     // Drains the message queue. Returns false once the window has closed.
     bool pumpMessages();
 
@@ -80,6 +86,7 @@ private:
     HWND     hwnd_ = nullptr;
     EventFn  onEvent_;
     ResizeFn onResize_;
+    DragFn   onDrag_;
     bool     quit_ = false;
 
     bool     resized_       = false;

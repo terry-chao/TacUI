@@ -152,6 +152,14 @@ LRESULT Win32Window::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_ENTERSIZEMOVE:
+        if (onDrag_) onDrag_(true);
+        return 0;
+
+    case WM_EXITSIZEMOVE:
+        if (onDrag_) onDrag_(false);
+        return 0;
+
     case WM_MOUSEMOVE: {
         // Arm WM_MOUSELEAVE so hover state can be cleared when the pointer
         // leaves the client area.

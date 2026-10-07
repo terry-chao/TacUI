@@ -167,8 +167,6 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
     // thread holds it while it paints. Sizes travel through atomics.
     // -----------------------------------------------------------------------
     std::mutex            uiMutex;
-    std::atomic<uint32_t> frameW{ physWidth };
-    std::atomic<uint32_t> frameH{ physHeight };
     std::atomic<bool>     running{ true };
     std::atomic<bool>     deviceFailed{ false };
     std::atomic<bool>     captureRequested{ false };
@@ -179,6 +177,20 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
     std::mutex              frameMutex;
     std::condition_variable frameCv;
     uint64_t                renderedFrames = 0;
+
+    // Size handshake. The window procedure publishes the requested size and, if
+    // the user is dragging, waits until the renderer has actually resized and
+    // presented it. Without that wait the window is already at the new size
+    // while the back buffer is still the old one, and the desktop scales the
+    // stale frame to fit — a few transient milliseconds of the whole UI
+    // changing size, which is exactly what reads as the content jittering.
+    std::mutex              sizeMutex;
+    std::condition_variable appliedCv;   // renderer  -> UI thread
+    uint32_t                reqW = physWidth;
+    uint32_t                reqH = physHeight;
+    uint32_t                appW = physWidth;
+    uint32_t                appH = physHeight;
+    std::atomic<bool>       inDrag{ false };
 
     Control control;
     control.width_  = opts.width;
@@ -213,13 +225,33 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         if (toHostEvent(logical, out)) event(out);
     });
 
-    // Nothing but bookkeeping: this runs inside Windows' modal drag loop.
+    // Nothing but bookkeeping plus the handshake: this runs *inside* Windows'
+    // modal drag loop, so the only cost here is the swapchain resize the
+    // renderer is doing concurrently.
     window.setResizeFn([&](uint32_t w, uint32_t h) {
         if (w == 0 || h == 0) return;
-        frameW.store(w, std::memory_order_relaxed);
-        frameH.store(h, std::memory_order_relaxed);
+
         control.width_  = static_cast<uint32_t>(std::lround(w / scale));
         control.height_ = static_cast<uint32_t>(std::lround(h / scale));
+
+        {
+            std::lock_guard<std::mutex> lock(sizeMutex);
+            reqW = w;
+            reqH = h;
+        }
+        // Wait for the renderer only while the user is dragging: that is when
+        // the window is changing continuously and a buffer one size behind is
+        // visible. A programmatic resize can lag harmlessly.
+        if (inDrag.load(std::memory_order_relaxed)) {
+            std::unique_lock<std::mutex> lock(sizeMutex);
+            appliedCv.wait_for(lock, std::chrono::milliseconds(100), [&] {
+                return (appW == reqW && appH == reqH) || !running.load();
+            });
+        }
+    });
+
+    window.setDragFn([&](bool dragging) {
+        inDrag.store(dragging, std::memory_order_relaxed);
     });
 
     // Build once before the first frame callback so the callback can resolve
@@ -241,22 +273,26 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
             return;
         }
 
-        uint32_t curW = physWidth;
-        uint32_t curH = physHeight;
-
         while (running.load(std::memory_order_relaxed)) {
-            const uint32_t w = frameW.load(std::memory_order_relaxed);
-            const uint32_t h = frameH.load(std::memory_order_relaxed);
-            const bool resizing = (w != curW || h != curH);
-            if (resizing) {
-                device->resize(w, h);
-                curW = w;
-                curH = h;
+            uint32_t w = 0;
+            uint32_t h = 0;
+            bool     resizing = false;
+            {
+                // No timed wait here: Present is what paces this loop (vsync
+                // when idle, unthrottled while the size is moving). A timed
+                // wait would land on the system timer granularity — ~15.6ms —
+                // and silently cap the whole application to 60Hz.
+                std::lock_guard<std::mutex> lock(sizeMutex);
+                w        = reqW;
+                h        = reqH;
+                resizing = (w != appW || h != appH);
             }
+
+            if (resizing) device->resize(w, h);
 
             // Never wait for vblank while the size is still moving: the buffer
             // has to catch up with the window, not fall a frame behind it.
-            device->setVSync(!resizing);
+            device->setVSync(!resizing && !inDrag.load(std::memory_order_relaxed));
 
             const bool doCapture = captureRequested.load(std::memory_order_relaxed);
 
@@ -281,6 +317,15 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
                 }
                 captureRequested.store(false, std::memory_order_relaxed);
                 captureDone.store(true, std::memory_order_relaxed);
+            }
+
+            if (resizing) {
+                {
+                    std::lock_guard<std::mutex> lock(sizeMutex);
+                    appW = w;
+                    appH = h;
+                }
+                appliedCv.notify_all();
             }
 
             {
