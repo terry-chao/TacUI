@@ -123,8 +123,21 @@ LRESULT Win32Window::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
 
     case WM_SIZE: {
-        const uint32_t w = LOWORD(lParam);
-        const uint32_t h = HIWORD(lParam);
+        uint32_t w = LOWORD(lParam);
+        uint32_t h = HIWORD(lParam);
+
+        // Coalesce. During a fast drag Windows can queue several WM_SIZE while
+        // we are still resizing the swapchain for the previous one; doing the
+        // full (ResizeBuffers + repaint) work for every intermediate size means
+        // the buffer chases the window and never catches up — which is what
+        // makes the content visibly lag and jitter on a fast drag. Jump to the
+        // newest queued size and do the work once.
+        MSG queued;
+        while (PeekMessageW(&queued, hwnd_, WM_SIZE, WM_SIZE, PM_REMOVE)) {
+            w = LOWORD(queued.lParam);
+            h = HIWORD(queued.lParam);
+        }
+
         if (w > 0 && h > 0) {
             resized_       = true;
             pendingWidth_  = w;
