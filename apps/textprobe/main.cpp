@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <tacui/tacui.hpp>
@@ -32,7 +33,7 @@ void printBitmap(const tac::text::GlyphBitmap& b) {
 
 int main(int argc, char** argv) {
     const char* sample = (argc > 1) ? argv[1] : "Hello, TacUI!";
-    const float sizePx = 48.0f;
+    const float sizePx = (argc > 2) ? static_cast<float>(std::atof(argv[2])) : 48.0f;
 
     tac::text::TextSystem text;
     if (!text.init("Segoe UI")) {
