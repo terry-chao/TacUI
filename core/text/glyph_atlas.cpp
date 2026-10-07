@@ -109,13 +109,20 @@ const GlyphSlot* GlyphAtlas::get(const GlyphKey& key, const TextSystem& text, fl
     }
     markDirty(y, y + bmp.height);
 
-    // Inset to texel centres so linear filtering samples the glyph's own
-    // texels at the edges rather than half of the neighbour's.
+    // Edge-to-edge UVs, NOT texel-centre insets.
+    //
+    // The quad spans exactly `bmp.width` x `bmp.height` pixels (glyph.hlsl:
+    // centre +/- halfSize, and paint snaps the origin to whole pixels), so a
+    // pixel centre lands on a texel centre when the UV range covers the glyph's
+    // full texel extent — a 1:1 blit with no resampling. Insetting by half a
+    // texel would squeeze w texels into w pixels and blend every pixel with its
+    // neighbour, which softens every glyph. The padding gutter is what keeps
+    // the linear filter from reaching a neighbour anyway.
     const float inv = 1.0f / static_cast<float>(size_);
-    slot.u0 = (static_cast<float>(x) + 0.5f) * inv;
-    slot.v0 = (static_cast<float>(y) + 0.5f) * inv;
-    slot.u1 = (static_cast<float>(x + bmp.width) - 0.5f) * inv;
-    slot.v1 = (static_cast<float>(y + bmp.height) - 0.5f) * inv;
+    slot.u0 = static_cast<float>(x) * inv;
+    slot.v0 = static_cast<float>(y) * inv;
+    slot.u1 = static_cast<float>(x + bmp.width) * inv;
+    slot.v1 = static_cast<float>(y + bmp.height) * inv;
 
     ++stats_.rasterized;
     auto inserted = cache_.emplace(key, slot);

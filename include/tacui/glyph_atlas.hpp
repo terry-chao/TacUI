@@ -27,8 +27,9 @@ struct GlyphKeyHash {
 
 // Where a glyph lives, plus everything needed to position it.
 struct GlyphSlot {
-    // UV rect in the atlas, already inset to texel centres so linear filtering
-    // does not bleed in neighbours.
+    // UV rect in the atlas, edge-to-edge over the glyph's texels. The quad is
+    // exactly the glyph's pixel size, so this samples texel centres 1:1 with no
+    // resampling — inset UVs would squeeze the glyph and soften it.
     float u0 = 0.0f, v0 = 0.0f, u1 = 0.0f, v1 = 0.0f;
 
     float width    = 0.0f;   // pixels
