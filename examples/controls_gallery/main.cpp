@@ -905,6 +905,9 @@ int main(int argc, char** argv) {
     opts.height     = 712;
     opts.clear      = ui::darkTheme().background;
     opts.maxSeconds = maxSeconds;
+    // Captures are golden images: pin the scale so the same binary produces the
+    // same pixels on any display. Interactive runs follow the monitor DPI.
+    opts.uiScale    = capturePath ? 1.0f : 0.0f;
 
     return host::run(ui, opts, onFrame);
 }

@@ -158,6 +158,15 @@ void rebuildText(RenderObject& ro, ReconcileCtx& ctx, ReconcileStats& stats) {
     ro.placed.clear();
     if (!ctx.textSystem || !ctx.atlas || ro.text.empty()) return;
 
+    // Layout shapes at the logical size (so advances match the logical layout),
+    // but glyphs are rasterised at the *physical* size. Everything stored in
+    // `placed` is therefore node-local physical pixels; paint adds the scaled
+    // origin. That is what keeps text crisp on a scaled display instead of
+    // magnifying a small bitmap.
+    const float s      = ctx.scale > 0.0f ? ctx.scale : 1.0f;
+    const float pxSize = ro.fontSize * s;
+    ro.rasterScale     = s;
+
     if (!ctx.textSystem->shape(ro.text.c_str(), ro.fontSize, ro.shaped)) {
         return;
     }
@@ -166,21 +175,21 @@ void rebuildText(RenderObject& ro, ReconcileCtx& ctx, ReconcileStats& stats) {
     // Glyph positions are stored *node-local*: the baseline is measured from
     // the node's own top, and paint adds the final origin. Layout can therefore
     // relocate a text node without re-shaping it (see PlacedGlyph).
-    const float baseline = ctx.textSystem->ascent(ro.fontSize);
-    const uint16_t bucket = static_cast<uint16_t>(ro.fontSize + 0.5f);
+    const float baseline = ctx.textSystem->ascent(pxSize);
+    const uint16_t bucket = static_cast<uint16_t>(pxSize + 0.5f);
 
     const uint32_t rasterizedBefore = ctx.atlas->stats().rasterized;
 
     ro.placed.reserve(ro.shaped.glyphs.size());
     for (const text::Glyph& g : ro.shaped.glyphs) {
         const text::GlyphSlot* slot =
-            ctx.atlas->get(text::GlyphKey{ g.index, bucket }, *ctx.textSystem, ro.fontSize);
+            ctx.atlas->get(text::GlyphKey{ g.index, bucket }, *ctx.textSystem, pxSize);
         if (!slot) continue;   // atlas full; the glyph is dropped, not faked
         if (slot->width <= 0.0f || slot->height <= 0.0f) continue;   // blank glyph
 
         PlacedGlyph placed;
         placed.bounds = Rect{
-            g.x + slot->bearingX,
+            g.x * s + slot->bearingX,   // logical advance -> physical local
             baseline - slot->bearingY,   // bearingY is positive going up
             slot->width,
             slot->height,
@@ -521,7 +530,9 @@ void reconcile(Element& e, const VNode& v, ReconcileStats& stats, ReconcileCtx& 
                 e.render->cornerRadius = v.cornerRadius;
             } else {
                 const char* newText = v.text ? v.text : "";
-                if (e.render->text != newText || e.render->fontSize != v.fontSize) {
+                const float s = ctx.scale > 0.0f ? ctx.scale : 1.0f;
+                if (e.render->text != newText || e.render->fontSize != v.fontSize ||
+                    e.render->rasterScale != s) {
                     e.render->text     = newText;
                     e.render->fontSize = v.fontSize;
                     // Re-shape only on change; this is the expensive part.

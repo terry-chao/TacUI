@@ -313,6 +313,8 @@ int main(int argc, char** argv) {
     hopts.height     = kInitialHeight;
     hopts.clear      = kClearColor;
     hopts.maxSeconds = opts.seconds;
+    // Golden captures pin the scale so the output is DPI-independent.
+    hopts.uiScale    = opts.capture ? 1.0f : 0.0f;
 
     const int rc = host::run(app.ui, hopts, onFrame, onEvent);
     if (rc != 0) return rc;

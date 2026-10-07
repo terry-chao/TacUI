@@ -23,6 +23,14 @@ Win32Window::~Win32Window() {
 bool Win32Window::create(const wchar_t* title, uint32_t width, uint32_t height) {
     HINSTANCE inst = GetModuleHandleW(nullptr);
 
+    // Declare per-monitor DPI awareness BEFORE any window exists. Without it
+    // Windows virtualizes the whole process: it reports a smaller logical
+    // client area and bitmap-stretches the finished window to the physical
+    // resolution. On a 150% display that resamples everything — text worst of
+    // all. Failure is fine (the process may already be aware, e.g. via a
+    // manifest); we just keep going.
+    enableDpiAwareness();
+
     WNDCLASSEXW wc{};
     wc.cbSize        = sizeof(wc);
     wc.style         = CS_HREDRAW | CS_VREDRAW;
@@ -35,8 +43,11 @@ bool Win32Window::create(const wchar_t* title, uint32_t width, uint32_t height) 
         return false;
     }
 
+    // With PMv2 awareness the client size is physical pixels, and the non-client
+    // frame has to be sized for the target monitor's DPI, not for 96.
+    const UINT dpi = GetDpiForSystem();
     RECT r{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
-    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+    AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
 
     hwnd_ = CreateWindowExW(
         0, kClassName, title, WS_OVERLAPPEDWINDOW,
@@ -45,6 +56,20 @@ bool Win32Window::create(const wchar_t* title, uint32_t width, uint32_t height) 
         nullptr, nullptr, inst, this);
 
     return hwnd_ != nullptr;
+}
+
+void enableDpiAwareness() {
+    static const bool once = [] {
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        return true;
+    }();
+    (void)once;
+}
+
+float Win32Window::dpiScale() const {
+    if (!hwnd_) return 1.0f;
+    const UINT dpi = GetDpiForWindow(hwnd_);
+    return dpi ? static_cast<float>(dpi) / 96.0f : 1.0f;
 }
 
 void Win32Window::show() {

@@ -7,6 +7,11 @@
 
 namespace tac::platform {
 
+// Declares per-monitor DPI awareness for the process. Idempotent; must run
+// before any window is created. Win32Window::create calls it too, but a host
+// that needs the DPI before creating a window (to size it) calls it first.
+void enableDpiAwareness();
+
 enum class EventType {
     Resize,
     Close,
@@ -45,6 +50,12 @@ public:
     void show();
 
     HWND handle() const { return hwnd_; }
+
+    // DPI of the monitor this window is on, as a scale over 96 DPI (so 1.5 at
+    // 150%). Requires the process to be per-monitor DPI aware — create() sets
+    // that up before the window exists.
+    float dpiScale() const;
+
     void setEventFn(EventFn fn) { onEvent_ = std::move(fn); }
 
     // Drains the message queue. Returns false once the window has closed.

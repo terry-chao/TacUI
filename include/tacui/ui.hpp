@@ -81,6 +81,18 @@ public:
     const Theme& theme() const { return theme_; }
     void         setTheme(const Theme& t) { theme_ = t; invalidate(); }
 
+    // DPI scale (1.0 = 100%). The UI is authored in logical units; paint
+    // multiplies by this so the renderer draws at the monitor's physical
+    // resolution, and text is rasterised at the scaled size — which is the
+    // whole point: glyphs must be built at physical pixels, not stretched there.
+    void  setScale(float s) {
+        if (s > 0.0f && s != scale_) {
+            scale_ = s;
+            invalidate();
+        }
+    }
+    float scale() const { return scale_; }
+
     // ---- text metrics ----------------------------------------------------
     // Measured through the same shaper that draws, so a centred label is
     // centred against the pixels that actually appear. Returns 0 when there
@@ -159,6 +171,8 @@ private:
     VNodeArena arena_;
     ElementPtr root_;
     bool       dirty_ = true;
+
+    float      scale_ = 1.0f;
 
     bool    stateInit_[kMaxStateSlots]   = {};
     int64_t stateValues_[kMaxStateSlots] = {};

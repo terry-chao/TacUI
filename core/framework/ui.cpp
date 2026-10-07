@@ -54,8 +54,12 @@ void Ui::collectPaint(const Element& e, Rect clip, bool clipped) {
         clip    = clipped ? intersectRect(clip, e.clipBounds) : e.clipBounds;
         clipped = true;
     }
+    // The UI is authored in logical units; the renderer works in physical
+    // pixels. Everything submitted is scaled here, at the last moment.
+    const float s = scale_;
+
     const rhi::ClipRect scissor = clipped
-        ? rhi::ClipRect{ clip.x, clip.y, clip.right(), clip.bottom(), true }
+        ? rhi::ClipRect{ clip.x * s, clip.y * s, clip.right() * s, clip.bottom() * s, true }
         : rhi::ClipRect{};
 
     if (e.render) {
@@ -64,8 +68,9 @@ void Ui::collectPaint(const Element& e, Rect clip, bool clipped) {
 
         if (e.type == VType::Rect) {
             rhi::SdfRect r{};
-            r.bounds       = effectiveBounds(ro);
-            r.cornerRadius = ro.cornerRadius;
+            const Rect b   = effectiveBounds(ro);
+            r.bounds       = Rect{ b.x * s, b.y * s, b.w * s, b.h * s };
+            r.cornerRadius = ro.cornerRadius * s;
             r.color        = effectiveColor(ro);
             r.clip         = scissor;
             pushRect(r);
@@ -76,12 +81,13 @@ void Ui::collectPaint(const Element& e, Rect clip, bool clipped) {
             // resample it, which is what turns UI text to mush. The pen advance
             // inside the run stays fractional, so spacing is unaffected.
             const Rect  ob   = effectiveBounds(ro);
+            const Vec2  origin{ ob.x * s, ob.y * s };
             const Color tint = effectiveColor(ro);
 
             for (const PlacedGlyph& g : ro.placed) {
                 rhi::GlyphQuad q{};
-                q.bounds = Rect{ std::round(ob.x + g.bounds.x),
-                                 std::round(ob.y + g.bounds.y),
+                q.bounds = Rect{ std::round(origin.x + g.bounds.x),
+                                 std::round(origin.y + g.bounds.y),
                                  g.bounds.w, g.bounds.h };
                 q.u0 = g.u0;
                 q.v0 = g.v0;
@@ -176,6 +182,7 @@ bool Ui::update() {
     ctx.textSystem = textSystem_.valid() ? &textSystem_ : nullptr;
     ctx.atlas      = atlas_.valid() ? &atlas_ : nullptr;
     ctx.atlasDirty = &atlasDirty_;
+    ctx.scale      = scale_;
 
     ReconcileStats rs;
     reconcile(*root_, *v, rs, ctx);

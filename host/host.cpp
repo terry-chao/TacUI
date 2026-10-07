@@ -1,6 +1,7 @@
 #include "tacui/host.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <vector>
@@ -117,17 +118,40 @@ bool toInputEvent(const platform::WindowEvent& in, ui::InputEvent& out) {
 } // namespace
 
 int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& event) {
+    // DPI awareness has to be declared before any window exists, and we need the
+    // DPI before creating one to size it — so enable it first, then read the
+    // system DPI. (`Win32Window::create` also calls this; it is idempotent.)
+    platform::enableDpiAwareness();
+
+    const float initialScale =
+        opts.uiScale > 0.0f ? opts.uiScale
+                            : static_cast<float>(GetDpiForSystem()) / 96.0f;
+    const uint32_t physWidth  = static_cast<uint32_t>(std::lround(opts.width  * initialScale));
+    const uint32_t physHeight = static_cast<uint32_t>(std::lround(opts.height * initialScale));
+
     platform::Win32Window window;
     const std::wstring wideTitle = toWide(opts.title ? opts.title : "TacUI");
-    if (!window.create(wideTitle.c_str(), opts.width, opts.height)) {
+    if (!window.create(wideTitle.c_str(), physWidth, physHeight)) {
         std::fprintf(stderr, "[host] failed to create the window\n");
         return -1;
     }
 
+    // The monitor the window actually landed on may differ from the system DPI,
+    // so re-derive the scale now that the window exists.
+    const float scale = opts.uiScale > 0.0f ? opts.uiScale : window.dpiScale();
+    ui.setScale(scale);
+
+    if (scale != 1.0f) {
+        std::fprintf(stderr,
+                     "[host] DPI scale %.2f -> rendering at %ux%u physical for a "
+                     "%ux%u logical UI\n",
+                     scale, physWidth, physHeight, opts.width, opts.height);
+    }
+
     rhi::SwapchainDesc desc{};
     desc.window      = window.handle();
-    desc.width       = opts.width;
-    desc.height      = opts.height;
+    desc.width       = physWidth;
+    desc.height      = physHeight;
     desc.bufferCount = 2;
 
     std::unique_ptr<rhi::Device> device = rhi::createD3D12Device(desc);
@@ -140,22 +164,31 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
     control.width_  = opts.width;
     control.height_ = opts.height;
 
-    window.setEventFn([&event, &control, &ui](const platform::WindowEvent& in) {
+    // Window events arrive in physical client pixels; the UI is authored in
+    // logical units, so convert once here and everything downstream (hit
+    // testing, app code) stays logical.
+    window.setEventFn([&event, &control, &ui, scale](const platform::WindowEvent& in) {
         // Esc always quits, so examples do not each have to wire it up.
         if (in.type == platform::EventType::KeyDown && in.key == VK_ESCAPE) {
             control.exitRequested_ = true;
             return;
         }
 
+        platform::WindowEvent logical = in;
+        if (in.x != -1 || in.y != -1) {   // -1,-1 is MouseLeave, left alone
+            logical.x = static_cast<int32_t>(std::lround(in.x / scale));
+            logical.y = static_cast<int32_t>(std::lround(in.y / scale));
+        }
+
         // The framework owns interaction: hit testing, hover, press, focus.
         ui::InputEvent ie;
-        if (toInputEvent(in, ie)) ui.dispatchEvent(ie);
+        if (toInputEvent(logical, ie)) ui.dispatchEvent(ie);
 
         // The app callback is for app-level concerns only. It never has to
         // test a bounding box.
         if (!event) return;
         Event out;
-        if (toHostEvent(in, out)) event(out);
+        if (toHostEvent(logical, out)) event(out);
     });
 
     window.show();
@@ -170,9 +203,9 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         uint32_t w = 0;
         uint32_t h = 0;
         if (window.consumeResize(w, h)) {
-            device->resize(w, h);
-            control.width_  = w;
-            control.height_ = h;
+            device->resize(w, h);   // physical back buffer
+            control.width_  = static_cast<uint32_t>(std::lround(w / scale));
+            control.height_ = static_cast<uint32_t>(std::lround(h / scale));
         }
 
         const double elapsed =

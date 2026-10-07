@@ -21,9 +21,20 @@ struct Options {
     // purpose: its width is platform-dependent, and this struct also feeds the
     // C ABI.
     const char* title  = "TacUI";
+
+    // Logical units, not physical pixels. The window is created at
+    // width x height times the monitor's DPI scale, and every coordinate the
+    // app sees (Events, Control::clientWidth) stays logical — so a UI authored
+    // at 100% keeps its intended physical size on a 150% display while the
+    // renderer draws at full physical resolution.
     uint32_t    width  = 1280;
     uint32_t    height = 720;
     Color       clear  = Color::rgba8(24, 26, 32);
+
+    // Overrides the DPI-derived UI scale. 0 = follow the window's monitor;
+    // 1 makes rendering DPI-independent, which is what a golden-image capture
+    // wants so the same binary produces the same pixels on any display.
+    float       uiScale = 0.0f;
 
     // Stop after this many seconds. 0 runs until the window closes.
     double maxSeconds = 0.0;

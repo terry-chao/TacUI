@@ -439,6 +439,8 @@ int main(int argc, char** argv) {
     opts.height     = 340;
     opts.clear      = rgb(22, 24, 30);
     opts.maxSeconds = maxSeconds;
+    // Golden captures pin the scale so the output is DPI-independent.
+    opts.uiScale    = capturePath ? 1.0f : 0.0f;
 
     return host::run(ui, opts, onFrame);
 }

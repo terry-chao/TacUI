@@ -45,6 +45,9 @@ struct RenderObject {
     // are rebuilt only when those change.
     std::string         text;
     float               fontSize = 0.0f;
+    // DPI scale the glyphs were rasterised at, so a scale change (the window
+    // moving to another monitor) re-shapes rather than reusing stale bitmaps.
+    float               rasterScale = 1.0f;
     text::ShapedLine    shaped;
     std::vector<PlacedGlyph> placed;
 
@@ -192,6 +195,10 @@ struct ReconcileCtx {
     text::TextSystem* textSystem = nullptr;
     text::GlyphAtlas* atlas      = nullptr;
     bool*             atlasDirty = nullptr;   // set when new glyphs were added
+    // DPI scale. Layout works in logical units; glyphs are rasterised at
+    // fontSize * scale so they are built at physical pixels rather than
+    // magnified to them.
+    float             scale      = 1.0f;
 };
 
 // Diffs `v` into `e`. M0 matches children positionally; key-based matching and
