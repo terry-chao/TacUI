@@ -31,7 +31,9 @@
 extern "C" {
 #endif
 
-#define TUI_ABI_VERSION 1u
+// 2: the input callback now hands back a `tui_event` (it carries the wheel
+//    delta and a translated character), replacing the old five-parameter form.
+#define TUI_ABI_VERSION 2u
 
 // ---------------------------------------------------------------------------
 // Handles
@@ -102,9 +104,24 @@ typedef void (*tui_build_fn)(void* user);
 // never cause a rebuild (M0 criterion 3).
 typedef void (*tui_frame_fn)(void* user, double elapsed_seconds);
 
-// Invoked for input. `x`/`y` are client-relative pixels; `key` is the virtual
-// key code for TUI_EVENT_KEY_DOWN.
-typedef void (*tui_event_fn)(void* user, int32_t type, int32_t x, int32_t y, uint32_t key);
+// One input event. A struct rather than a widening parameter list, because the
+// vocabulary now includes the wheel delta and a translated character.
+typedef struct {
+    int32_t  type;       // one of TUI_EVENT_*
+    float    x;          // client-relative pixels
+    float    y;
+    uint32_t key;        // TUI_KEY_* for TUI_EVENT_KEY_DOWN
+    uint32_t codepoint;  // TUI_EVENT_CHAR
+    float    wheel;      // TUI_EVENT_MOUSE_WHEEL, notches
+    int32_t  shift;      // modifier state
+} tui_event;
+
+typedef void (*tui_event_fn)(void* user, const tui_event* event);
+
+// sizeof(tui_event) as the library was compiled. Hosts should compare it
+// against their own mirror before trusting the layout — the same guard
+// tui_stats_size provides, and the reason it exists.
+TUI_API uint32_t tui_event_size(void);
 
 typedef struct {
     tui_build_fn build;

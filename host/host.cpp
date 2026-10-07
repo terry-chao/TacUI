@@ -50,13 +50,17 @@ bool toHostEvent(const platform::WindowEvent& in, Event& out) {
     case platform::EventType::MouseLeave: out.type = EventType::MouseLeave; break;
     case platform::EventType::MouseDown:  out.type = EventType::MouseDown;  break;
     case platform::EventType::MouseUp:    out.type = EventType::MouseUp;    break;
+    case platform::EventType::MouseWheel: out.type = EventType::MouseWheel; break;
     case platform::EventType::KeyDown:    out.type = EventType::KeyDown;    break;
+    case platform::EventType::Character:  out.type = EventType::Character;  break;
     default:                              return false;
     }
-    out.x     = in.x;
-    out.y     = in.y;
-    out.key   = in.key;
-    out.shift = in.shift;
+    out.x         = in.x;
+    out.y         = in.y;
+    out.key       = in.key;
+    out.codepoint = in.codepoint;
+    out.wheel     = static_cast<float>(in.wheel);
+    out.shift     = in.shift;
     return true;
 }
 

@@ -61,13 +61,25 @@ using FrameFn = std::function<void(Control&, double elapsedSeconds)>;
 
 // Input events. Deliberately a separate type from the platform layer's, so
 // this header stays free of windows.h.
-enum class EventType { Resize, Close, MouseMove, MouseLeave, MouseDown, MouseUp, KeyDown };
+enum class EventType {
+    Resize,
+    Close,
+    MouseMove,
+    MouseLeave,
+    MouseDown,
+    MouseUp,
+    MouseWheel,
+    KeyDown,
+    Character,   // a translated character; `codepoint` is valid
+};
 
 struct Event {
     EventType type = EventType::Close;
-    int32_t   x    = 0;   // client-relative pixels; -1,-1 for MouseLeave
+    int32_t   x    = 0;       // client-relative pixels; -1,-1 for MouseLeave
     int32_t   y    = 0;
     uint32_t  key   = 0;      // virtual key code, for KeyDown
+    uint32_t  codepoint = 0;  // Character: the translated codepoint
+    float     wheel = 0.0f;   // MouseWheel: notches, positive away from the user
     bool      shift = false;  // KeyDown: was shift held
 };
 

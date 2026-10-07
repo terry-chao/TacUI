@@ -52,7 +52,9 @@ int32_t toCApi(host::EventType t) {
     case host::EventType::MouseLeave: return TUI_EVENT_MOUSE_LEAVE;
     case host::EventType::MouseDown:  return TUI_EVENT_MOUSE_DOWN;
     case host::EventType::MouseUp:    return TUI_EVENT_MOUSE_UP;
+    case host::EventType::MouseWheel: return TUI_EVENT_MOUSE_WHEEL;
     case host::EventType::KeyDown:    return TUI_EVENT_KEY_DOWN;
+    case host::EventType::Character:  return TUI_EVENT_CHAR;
     }
     return -1;
 }
@@ -680,6 +682,10 @@ uint32_t tui_stats_size(void) {
     return static_cast<uint32_t>(sizeof(tui_stats));
 }
 
+uint32_t tui_event_size(void) {
+    return static_cast<uint32_t>(sizeof(tui_event));
+}
+
 void tui_get_stats(const tui_ui* ui, tui_stats* out) {
     if (!out) return;
     std::memset(out, 0, sizeof(*out));
@@ -793,7 +799,15 @@ int32_t tui_run(tui_ui* ui, const char* title_utf8, uint32_t width, uint32_t hei
         if (!ui->host.event) return;
         const int32_t type = toCApi(ev.type);
         if (type < 0) return;
-        ui->host.event(ui->host.user, type, ev.x, ev.y, ev.key);
+        tui_event out{};
+        out.type      = type;
+        out.x         = static_cast<float>(ev.x);
+        out.y         = static_cast<float>(ev.y);
+        out.key       = ev.key;
+        out.codepoint = ev.codepoint;
+        out.wheel     = ev.wheel;
+        out.shift     = ev.shift ? 1 : 0;
+        ui->host.event(ui->host.user, &out);
     };
 
     const int rc = host::run(ui->ui, opts, onFrame, onEvent);
