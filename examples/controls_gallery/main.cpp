@@ -481,6 +481,79 @@ int runLayoutTest() {
     return ok ? 0 : 2;
 }
 
+// ---------------------------------------------------------------------------
+// Paint order harness (M1: one ordered draw list)
+//
+// M0 drew every rectangle before every glyph, so a text node under a later rect
+// was painted on top of it. The fix submits same-type runs in tree order; this
+// asserts the interleaving directly, by recording the order of draw calls.
+// ---------------------------------------------------------------------------
+
+namespace paint {
+
+constexpr ui::Key kUnderText = 700;
+constexpr ui::Key kRect      = 701;
+constexpr ui::Key kRect2     = 702;
+constexpr ui::Key kOverText  = 703;
+
+ui::VNode* build(ui::Builder& b) {
+    auto root = b.stack();
+
+    // text, rect, rect, text — the rects must land *between* the two texts, not
+    // all before them.
+    b.text("under").box(0.0f, 0.0f, 200.0f, 24.0f).size(16.0f)
+        .color(ui::rgb(230, 230, 240)).key(kUnderText);
+    b.rect().box(0.0f, 0.0f, 200.0f, 24.0f).color(ui::rgb(200, 80, 80)).key(kRect);
+    b.rect().box(0.0f, 40.0f, 200.0f, 24.0f).color(ui::rgb(80, 200, 120)).key(kRect2);
+    b.text("over").box(0.0f, 40.0f, 200.0f, 24.0f).size(16.0f)
+        .color(ui::rgb(230, 230, 240)).key(kOverText);
+
+    return b.root();
+}
+
+} // namespace paint
+
+// Records one character per draw *call*, so the string reads as the submission
+// order: 'g' for a glyph run, 'r' for a rect run.
+struct OrderRecorder final : rhi::Device {
+    std::string order;
+
+    void beginFrame(Color) override {}
+    void endFrame() override {}
+    void resize(uint32_t, uint32_t) override {}
+    void drawSdfRects(const rhi::SdfRect*, uint32_t) override { order.push_back('r'); }
+    void drawGlyphQuads(const rhi::GlyphQuad*, uint32_t) override { order.push_back('g'); }
+};
+
+int runPaintTest() {
+    ui::Ui ui;
+    if (!ui.init([](ui::BuildContext& ctx) {
+            ui::Builder b(ctx);
+            return paint::build(b);
+        })) {
+        std::fprintf(stderr, "fatal: paint test init failed\n");
+        return 1;
+    }
+    ui.update();
+
+    OrderRecorder rec;
+    ui.paint(rec);
+
+    bool ok = true;
+    auto check = [&ok](bool cond, const char* what) {
+        std::printf("  [%s] %s\n", cond ? "PASS" : "FAIL", what);
+        if (!cond) ok = false;
+    };
+
+    std::printf("\n--- paint order self-test ---\n");
+    std::printf("  submission order: \"%s\" (expected \"grg\")\n", rec.order.c_str());
+    check(rec.order == "grg",
+          "rect runs are submitted between glyph runs, in tree order");
+
+    std::printf("--- %s ---\n", ok ? "ALL PASS" : "FAILURES PRESENT");
+    return ok ? 0 : 2;
+}
+
 ui::InputEvent moveTo(float x, float y) {
     ui::InputEvent e;
     e.type = ui::InputEventType::MouseMove;
@@ -534,10 +607,12 @@ struct RecordingDevice final : rhi::Device {
     void endFrame() override {}
     void resize(uint32_t, uint32_t) override {}
     void drawSdfRects(const rhi::SdfRect* r, uint32_t n) override {
-        rects.assign(r, r + n);
+        // Append: a frame now submits several runs (rect / glyph / rect …), so
+        // assign() would keep only the last one.
+        rects.insert(rects.end(), r, r + n);
     }
     void drawGlyphQuads(const rhi::GlyphQuad* q, uint32_t n) override {
-        quads.assign(q, q + n);
+        quads.insert(quads.end(), q, q + n);
     }
 };
 
@@ -764,6 +839,7 @@ int main(int argc, char** argv) {
     double      maxSeconds  = 0.0;
     bool        inputTest   = false;
     bool        layoutTest  = false;
+    bool        paintTest   = false;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--capture") == 0 && i + 1 < argc) {
@@ -774,10 +850,13 @@ int main(int argc, char** argv) {
             inputTest = true;
         } else if (std::strcmp(argv[i], "--layout-test") == 0) {
             layoutTest = true;
+        } else if (std::strcmp(argv[i], "--paint-test") == 0) {
+            paintTest = true;
         }
     }
 
     if (layoutTest) return runLayoutTest();
+    if (paintTest)  return runPaintTest();
 
     App    app;
     ui::Ui ui;
