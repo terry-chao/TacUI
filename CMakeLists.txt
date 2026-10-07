@@ -202,12 +202,15 @@ target_include_directories(tacui PUBLIC
 target_link_libraries(tacui PRIVATE tacui_host)
 
 # Keep the import library stable and put the DLL where hosts look for it.
+# CMAKE_CURRENT_BINARY_DIR, not CMAKE_BINARY_DIR: as a subproject the latter is
+# the *consumer's* build root, and dropping a DLL into someone else's bin/ is
+# how you get name collisions and confusing artifacts.
 set_target_properties(tacui PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY         ${CMAKE_BINARY_DIR}/bin
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG   ${CMAKE_BINARY_DIR}/bin
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin
-    LIBRARY_OUTPUT_DIRECTORY         ${CMAKE_BINARY_DIR}/bin
-    ARCHIVE_OUTPUT_DIRECTORY         ${CMAKE_BINARY_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY         ${CMAKE_CURRENT_BINARY_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG   ${CMAKE_CURRENT_BINARY_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_BINARY_DIR}/bin
+    LIBRARY_OUTPUT_DIRECTORY         ${CMAKE_CURRENT_BINARY_DIR}/bin
+    ARCHIVE_OUTPUT_DIRECTORY         ${CMAKE_CURRENT_BINARY_DIR}/bin
 )
 
 # ---------------------------------------------------------------------------
@@ -241,12 +244,30 @@ if(TACUI_BUILD_EXAMPLES)
 
     set(_tacui_examples m0 asset_browser controls_gallery)
     set_target_properties(${_tacui_examples} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY         ${CMAKE_BINARY_DIR}/bin
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG   ${CMAKE_BINARY_DIR}/bin
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY         ${CMAKE_CURRENT_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG   ${CMAKE_CURRENT_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_BINARY_DIR}/bin
     )
 
 endif()
+
+# ---------------------------------------------------------------------------
+# Namespaced aliases
+#
+# find_package(TacUI CONFIG) hands out TacUI::tacui_host and friends — the
+# export set's NAMESPACE supplies that prefix. FetchContent and
+# add_subdirectory see the raw target names instead, which would make the link
+# line depend on how TacUI arrived. These aliases close the gap, so a
+# consumer writes TacUI::tacui_host either way.
+# ---------------------------------------------------------------------------
+add_library(TacUI::tacui_flags    ALIAS tacui_flags)
+add_library(TacUI::tacui_text     ALIAS tacui_text)
+add_library(TacUI::tacui_platform ALIAS tacui_platform)
+add_library(TacUI::tacui_rhi      ALIAS tacui_rhi)
+add_library(TacUI::tacui_core     ALIAS tacui_core)
+add_library(TacUI::tacui_tools    ALIAS tacui_tools)
+add_library(TacUI::tacui_host     ALIAS tacui_host)
+add_library(TacUI::tacui          ALIAS tacui)
 
 # ---------------------------------------------------------------------------
 # Install & CMake package
