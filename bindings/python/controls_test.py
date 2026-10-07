@@ -228,6 +228,15 @@ def main() -> int:
     ui.update()
     check(ui.text_get(K_TEXT) == "reset", "the host can set the field's text")
 
+    # CJK goes in as codepoints and must land in the buffer as valid UTF-8 —
+    # separate from whether the glyphs render (that is the atlas/fallback path).
+    ui.text_set(K_TEXT, "")
+    ui.update()
+    ui.dispatch(tacui.EVENT_CHAR, codepoint=0x4E2D)   # 中
+    ui.dispatch(tacui.EVENT_CHAR, codepoint=0x6587)   # 文
+    ui.update()
+    check(ui.text_get(K_TEXT) == "中文", "typing CJK stores correct UTF-8")
+
     # --- list view: select a row, then scroll with the wheel ---------
     ui.click(K_LIST_ROW + 2)
     ui.update()
