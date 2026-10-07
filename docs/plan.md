@@ -287,6 +287,7 @@ M0 **不是** "Hello World 按钮"。M0 的任务是**验证架构里最冒险�
 8. **`liveOverrides` 只在 `update()` 里赋值**，而树不脏时 `update()` 直接 early-return，所以这个值会停在第一次构建时的状态。改为在 `paint()` 里统计（它本来就在遍历树）。
 9. **文字发糊**：字形的 pen advance 是小数（排印正确），但按小数位置画位图会被线性采样器重采样。修法是**吸附字形原点到整像素、保留小数 advance**。间距不受影响（同一基线上的字形相对偏移恒为整数），字形变清晰。
 10. **文字仍然发糊（#9 的续集，另一个原因）**：atlas 的 UV 用了"纹素中心内缩"（`(x+0.5)/size … (x+w-0.5)/size`），而 quad 横跨的是**像素边缘到边缘**（`center ± halfSize`）。两者不匹配 → 把 `w` 个纹素塞进 `w` 个像素，**每个像素都在双线性混合相邻纹素**，字形被系统性重采样、发软。改成边界到边界（`x/size … (x+w)/size`）后是严格 1:1 贴图。实测文字密集区域边沿能量提升约 **1.65x**，纯背景区域 0 像素变化；`textprobe` 现在断言 UV 跨度 == 位图尺寸。
+11. **文字还是糊（#9/#10 之后的主因）**：进程**没有声明 DPI 感知**，在 150% 缩放的显示器上 Windows 把整个窗口位图拉伸 1.5 倍——一切都被重采样，文字最明显。注意陷阱：`GetDpiForSystem()` 从**非 DPI 感知**的进程里问会返回 96，所以一开始误判成 100%（`HKCU\Control Panel\Desktop\WindowMetrics\AppliedDPI` 才是真值 144）。修法：进程声明 Per-Monitor V2，窗口/后缓冲走物理分辨率，UI 保持逻辑单位，paint 时 ×scale，**字形按 `fontSize×scale` 在物理像素上光栅化**（而不是放大位图）。1x 截图哈希不变，证明对未缩放路径零影响。
 
 **M0 之后的工作**见 [components.md](components.md)：输入系统（命中测试 / hover / press / 焦点 / Tab）、主题令牌、12 个 L2 控件、`ScrollView` / `ListView` 与相对布局（row / column）已完成（见 [布局](layout.md)）；其余 L2、通用约束传播、`Popup`、IME 待做。
 
