@@ -56,7 +56,8 @@ M0 **不是** 「Hello World 按钮」。它必须同时满足：
 | 6 | Inspector 打印树 + base / override | ✅ | `tui_dump_tree` → 每节点 base / override / 文本内容可见 |
 
 **M0 全部完成。** 文本层在 M0 的范围是：单一字体、码点 → 字形 1:1（无 ligature / 复杂文种）、
-单行不换行。HarfBuzz + ICU 在 M1 替换。
+单行不换行。**字体回退已补**（主字体缺字时经系统回退解析，中文不再出方块）；
+HarfBuzz + ICU 仍在 M1 替换。
 
 ---
 

@@ -271,7 +271,7 @@ M0 **不是** "Hello World 按钮"。M0 的任务是**验证架构里最冒险�
 | 5 | 非 C++ 语言驱动 | ✅ | Python/ctypes 宿主，含文本，`demo.py --selftest` 全 PASS |
 | 6 | Inspector 打印树 + base/override | ✅ | `tui_dump_tree` → 每节点 base/override/文本内容可见 |
 
-**M0 全部完成。** 文本层 M0 范围：单一字体、码点→字形 1:1（无 ligature / 复杂文种）、单行不换行。HarfBuzz + ICU 在 M1 替换（architecture.md §3.4）。
+**M0 全部完成。** 文本层 M0 范围：单一字体、码点→字形 1:1（无 ligature / 复杂文种）、单行不换行。**后续已补上字体回退**：主字体不含的字符（中日韩、部分符号）经 DirectWrite 的系统回退解析到对应字体，字形携带 face id、图集按 (face, glyph, size) 缓存——否则中文会渲染成方块。仍是码点→字形 1:1、单行；HarfBuzz + ICU 在 M1 替换（architecture.md §3.4）。
 
 **已建成的基建：** D3D12 校验层诊断通道（stderr）、帧回读 → PNG（golden-image 测试的种子）、`--selftest` 自动断言（C++ 与 Python 各一份）、`textprobe`（无需 GPU 的文本栈验证）。
 

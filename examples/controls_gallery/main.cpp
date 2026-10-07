@@ -224,8 +224,13 @@ ui::VNode* buildUi(ui::Builder& b, App& app) {
                  { .labels = kTabs, .count = kTabCount, .selected = app.tab },
                  [&app](int i) { app.tab = i; app.ui->invalidate(); });
 
+        // CJK here doubles as a fallback smoke test: these characters are not
+        // in the primary family, so they only render if the font fallback ran.
+        char tabLine[96];
+        std::snprintf(tabLine, sizeof tabLine, "%s · 中文 日本語",
+                      kTabs[std::clamp(app.tab, 0, kTabCount - 1)]);
         ui::label(b, 0, { 612.0f, 416.0f, 238.0f, 18.0f },
-                  { .text = kTabs[std::clamp(app.tab, 0, kTabCount - 1)] });
+                  { .text = tabLine });
     }
 
     // ---- text ------------------------------------------------------------
@@ -861,7 +866,7 @@ int main(int argc, char** argv) {
     App    app;
     ui::Ui ui;
     app.ui = &ui;
-    app.input.text = "TacUI";
+    app.input.text = "中文 TacUI";   // CJK in the field, to exercise the fallback
     app.input.moveTo(static_cast<int>(app.input.text.size()));
 
     // Row labels live in the app so the pointers stay stable; `listView` only
