@@ -176,15 +176,15 @@ class Demo(tacui.App):
 
     # -- input ------------------------------------------------------------
 
-    def event(self, kind: int, x: int, y: int, key: int) -> None:
-        if kind == EVENT_MOUSE_MOVE:
-            self.hx, self.hy = x, y
-        elif kind == EVENT_MOUSE_LEAVE:
+    def event(self, ev) -> None:
+        if ev.kind == EVENT_MOUSE_MOVE:
+            self.hx, self.hy = ev.x, ev.y
+        elif ev.kind == EVENT_MOUSE_LEAVE:
             self.hx, self.hy = -1, -1
-        elif kind == EVENT_MOUSE_DOWN:
-            if self.ui.contains(K_BUTTON, x, y):
+        elif ev.kind == EVENT_MOUSE_DOWN:
+            if self.ui.contains(K_BUTTON, ev.x, ev.y):
                 self.ui.set_state(SLOT_COUNT, self.ui.state(SLOT_COUNT, 0) + 1)
-        elif kind == EVENT_KEY_DOWN and key == VK_ESCAPE:
+        elif ev.kind == EVENT_KEY_DOWN and ev.key == VK_ESCAPE:
             self.ui.request_exit()
 
 

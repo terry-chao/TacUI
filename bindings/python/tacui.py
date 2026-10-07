@@ -37,7 +37,7 @@ from ctypes import (
 
 # --- ABI constants (must match capi/tacui.h) --------------------------------
 
-TUI_ABI_VERSION = 1
+TUI_ABI_VERSION = 2
 
 NODE_STACK = 0
 NODE_RECT = 1
@@ -118,9 +118,32 @@ class Stats(Structure):
     ]
 
 
+class Event(Structure):
+    """Mirrors tui_event — one input event.
+
+    `kind` is one of the EVENT_* constants; the remaining fields are
+    type-dependent (codepoint for EVENT_CHAR, wheel for EVENT_MOUSE_WHEEL,
+    key for EVENT_KEY_DOWN).
+    """
+
+    _fields_ = [
+        ("type", c_int32),
+        ("x", c_float),
+        ("y", c_float),
+        ("key", c_uint32),
+        ("codepoint", c_uint32),
+        ("wheel", c_float),
+        ("shift", c_int32),
+    ]
+
+    @property
+    def kind(self) -> int:
+        return self.type
+
+
 BUILD_FN = CFUNCTYPE(None, c_void_p)
 FRAME_FN = CFUNCTYPE(None, c_void_p, c_double)
-EVENT_FN = CFUNCTYPE(None, c_void_p, c_int32, c_int32, c_int32, c_uint32)
+EVENT_FN = CFUNCTYPE(None, c_void_p, POINTER(Event))
 DUMP_FN = CFUNCTYPE(None, c_void_p, c_int32, c_char_p)
 
 # Control callbacks. The C ABI hands back the `user` pointer it was given, which
@@ -291,6 +314,7 @@ _lib.tui_node_has_override.argtypes = [c_void_p, c_uint64]
 
 _lib.tui_stats_size.restype = c_uint32
 _lib.tui_get_stats.argtypes = [c_void_p, POINTER(Stats)]
+_lib.tui_event_size.restype = c_uint32
 
 
 def _check_stats_layout() -> None:
@@ -298,7 +322,8 @@ def _check_stats_layout() -> None:
 
     A hand-written mirror of a C struct is exactly the thing that drifts, and
     ctypes gives no warning when it does: tui_get_stats would fill more bytes
-    than this structure holds.
+    than this structure holds. Same guard for the event struct, which the C
+    side fills in before handing a pointer back through the callback.
     """
     expected = _lib.tui_stats_size()
     actual = ctypes.sizeof(Stats)
@@ -307,6 +332,15 @@ def _check_stats_layout() -> None:
             f"tacui.dll and this binding disagree on tui_stats: "
             f"library says {expected} bytes, binding has {actual}. "
             f"Update Stats in bindings/python/tacui.py."
+        )
+
+    expected_ev = _lib.tui_event_size()
+    actual_ev = ctypes.sizeof(Event)
+    if expected_ev != actual_ev:
+        raise RuntimeError(
+            f"tacui.dll and this binding disagree on tui_event: "
+            f"library says {expected_ev} bytes, binding has {actual_ev}. "
+            f"Update Event in bindings/python/tacui.py."
         )
 
 
@@ -337,8 +371,9 @@ class App:
     def frame(self, elapsed: float) -> None:
         """Called every frame. Animations belong here, via overrides."""
 
-    def event(self, kind: int, x: int, y: int, key: int) -> None:
-        """Input. Check `kind` against the EVENT_* constants."""
+    def event(self, ev: "Event") -> None:
+        """Input. Check `ev.kind` against the EVENT_* constants; the other
+        fields are type-dependent (ev.x/ev.y, ev.key, ev.codepoint, ev.wheel)."""
 
 
 class Ui:
@@ -785,10 +820,12 @@ class Ui:
             if a:
                 a.frame(elapsed)
 
-        def _event(user, kind, x, y, key):
+        def _event(user, ev):
             a = _APPS.get(user)
             if a:
-                a.event(kind, x, y, key)
+                # Copy out of the C-owned struct: the pointer is only valid for
+                # the duration of the call.
+                a.event(Event.from_buffer_copy(ev.contents))
 
         # ctypes needs these alive for as long as the C side holds pointers.
         self._build_cb = BUILD_FN(_build)
