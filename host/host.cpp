@@ -217,7 +217,7 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         device->resize(w, h);
         device->setVSync(false);
         device->beginFrame(opts.clear);
-        ui.paint(*device);
+        ui.repaint(*device);   // the tree is unchanged; only the buffer resized
         device->endFrame();
 
         presenting = false;

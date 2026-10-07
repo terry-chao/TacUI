@@ -229,6 +229,25 @@ void Ui::paint(rhi::Device& device) {
         collectPaint(*root_, Rect{}, false);
     }
 
+    submitRuns(device);
+
+    const auto& as = atlas_.stats();
+    stats_.glyphsRasterized = as.rasterized;
+    stats_.glyphCacheHits   = as.hits;
+    stats_.glyphQuads       = glyphQuadCount_;
+    // Observed per frame, not per rebuild: overrides come and go without the
+    // tree ever being dirty, so update() would leave this stale.
+    stats_.liveOverrides    = liveOverrides_;
+    ++stats_.paints;
+}
+
+void Ui::repaint(rhi::Device& device) {
+    // No tree walk: the draw list from the last paint() is still current.
+    submitRuns(device);
+    ++stats_.paints;
+}
+
+void Ui::submitRuns(rhi::Device& device) {
     // Upload only when the atlas actually gained glyphs — the steady state is
     // zero uploads per frame.
     if (atlasDirty_ && atlas_.valid()) {
@@ -247,15 +266,6 @@ void Ui::paint(rhi::Device& device) {
             device.drawSdfRects(rects_.data() + run.begin, run.count);
         }
     }
-
-    const auto& as = atlas_.stats();
-    stats_.glyphsRasterized = as.rasterized;
-    stats_.glyphCacheHits   = as.hits;
-    stats_.glyphQuads       = glyphQuadCount_;
-    // Observed per frame, not per rebuild: overrides come and go without the
-    // tree ever being dirty, so update() would leave this stale.
-    stats_.liveOverrides    = liveOverrides_;
-    ++stats_.paints;
 }
 
 int64_t Ui::state(uint32_t slot, int64_t initial) const {

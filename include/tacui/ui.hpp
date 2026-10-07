@@ -109,6 +109,12 @@ public:
     // Walks the retained tree and submits draw primitives.
     void paint(rhi::Device& device);
 
+    // Re-submits the draw list from the last paint() without walking the tree.
+    // The tree is unchanged between rebuilds, so re-collecting it just produces
+    // the same list — this is the cheap path for an interactive resize, where
+    // only the back buffer size changed.
+    void repaint(rhi::Device& device);
+
     // ---- state ---------------------------------------------------------
     int64_t state(uint32_t slot, int64_t initial) const;
     void    setState(uint32_t slot, int64_t value);   // marks the tree dirty
@@ -231,6 +237,7 @@ private:
     void collectPaint(const Element& e, Rect clip, bool clipped);
     void pushRect(const rhi::SdfRect& r);
     void pushQuad(const rhi::GlyphQuad& q);
+    void submitRuns(rhi::Device& device);
 
     std::vector<rhi::SdfRect>   rects_;
     std::vector<rhi::GlyphQuad> quads_;
