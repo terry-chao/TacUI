@@ -34,6 +34,29 @@ cmake --build build --config Debug
 | `tacui.dll` | the C ABI, for host languages (`bindings/python`) |
 | `textprobe` | text stack in isolation, no GPU needed |
 
+## Consuming it
+
+The library installs — `cmake --install` leaves the headers, the binaries and
+a `TacUIConfig.cmake` behind, so it is found the way every other CMake package
+is:
+
+```cmake
+find_package(TacUI CONFIG REQUIRED)
+target_link_libraries(app PRIVATE TacUI::tacui_host)   # the C++ shell
+target_link_libraries(app PRIVATE TacUI::tacui)        # only the C ABI
+```
+
+`TacUI::tacui_host` is the whole C++ surface. `TacUI::tacui` is the C ABI on
+its own and deliberately carries no C++ compile options, so a C or
+host-language consumer linking it gets no surprises.
+
+Or let vcpkg do the work — [`ports/`](ports/README.md) holds an overlay port
+covering `x64-windows`, `x64-windows-static` and `x64-windows-static-md`:
+
+```sh
+vcpkg install tacui --overlay-ports=<this repo>/ports
+```
+
 ## Writing a UI
 
 One include, and that is the whole surface:
@@ -181,6 +204,8 @@ capi/            the C ABI implementation — the only cross-language boundary
 bindings/        host-language wrappers; python/ is the worked example
 examples/        asset_browser (C++ and Python)
 apps/            m0 (validation harness), textprobe
+ports/           the vcpkg overlay port
+cmake/           the CMake package files (TacUIConfig.cmake.in)
 ```
 
 The core is embeddable: an application that already owns a window and a

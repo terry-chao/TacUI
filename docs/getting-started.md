@@ -1,7 +1,7 @@
 # 构建与运行
 
-Windows、MSVC、CMake ≥ 3.25 与 Windows SDK。**核心没有第三方依赖**，
-不需要 vcpkg，也没有外部包要拉。
+Windows、MSVC、CMake ≥ 3.25 与 Windows SDK。**核心没有第三方依赖** ——
+构建它不需要 vcpkg，但把它当依赖用的时候可以走 vcpkg。
 
 ```sh
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64
@@ -69,6 +69,35 @@ python browser.py
 
 ---
 
+## 当依赖用
+
+`cmake --install` 会留下头文件、二进制和一份 `TacUIConfig.cmake`，
+所以它和别的 CMake 库一样能被 `find_package` 找到：
+
+```cmake
+find_package(TacUI CONFIG REQUIRED)
+target_link_libraries(app PRIVATE TacUI::tacui_host)   # C++ 侧的全部
+target_link_libraries(app PRIVATE TacUI::tacui)        # 只要 C ABI
+```
+
+`TacUI::tacui` 是 C ABI 单独那一个，**不带** `/EHsc`、`/permissive-`
+这类 C++ 编译选项 —— C 宿主和非 C++ 宿主链接它不会有意外；
+C++ 侧用 `TacUI::tacui_host`，它会把 `core / rhi / text / platform / tools`
+整条依赖链一起带过来。
+
+不想自己装就用仓库里的 overlay port：
+
+```sh
+vcpkg install tacui --overlay-ports=<仓库>/ports
+```
+
+该 port 覆盖 `x64-windows`、`x64-windows-static`、`x64-windows-static-md`
+三个 triplet。静态 triplet 会把 `tacui` 从 DLL 变成静态库（C ABI 那个 target
+也一样），因为「静态 CRT 的 DLL」并不存在。细节和提交流程见
+[ports/README.md](https://github.com/terry-chao/TacUI/blob/main/ports/README.md)。
+
+---
+
 ## 仓库里每个目录是什么
 
 ```
@@ -81,6 +110,8 @@ capi/            C ABI 实现 —— 唯一的跨语言边界
 bindings/        宿主语言封装；python/ 是已经被驱动过的那一个
 examples/        asset_browser（C++ 与 Python 两版）
 apps/            m0（验证 harness）、textprobe
+ports/           vcpkg overlay port —— 让别处也能装它
+cmake/           CMake 包文件（TacUIConfig.cmake.in）
 ```
 
 `examples/` 与 `apps/` 只 include `<tacui/tacui.hpp>`。这条纪律由 CI 检查，
