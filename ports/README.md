@@ -50,9 +50,11 @@ cd vcpkg && ./bootstrap-vcpkg.sh
 ```
 
 Then open a PR containing `ports/tacui/` and `versions/`. CI builds every
-triplet the `supports` field allows — `windows & !uwp` means it will also try
-`arm64-windows`, which has never been built here. Narrow `supports` if that
-first CI run fails.
+triplet the `supports` field allows, which is the x64 Windows set above and
+nothing else. `x64` is in the expression on purpose — the renderer is D3D12 and
+the text stack is DirectWrite, and the library has only ever been built for
+x64. Add `arm64` back once a machine has actually produced a binary that runs
+there.
 
 ## Distributing without the official registry
 

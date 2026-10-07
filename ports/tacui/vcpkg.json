@@ -5,7 +5,7 @@
   "homepage": "https://github.com/terry-chao/TacUI",
   "documentation": "https://terry-chao.github.io/TacUI/",
   "license": "MIT",
-  "supports": "windows & !uwp",
+  "supports": "windows & x64 & !uwp",
   "dependencies": [
     {
       "name": "vcpkg-cmake",
