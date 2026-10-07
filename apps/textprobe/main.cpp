@@ -32,8 +32,13 @@ void printBitmap(const tac::text::GlyphBitmap& b) {
 } // namespace
 
 int main(int argc, char** argv) {
-    const char* sample = (argc > 1) ? argv[1] : "Hello, TacUI!";
-    const float sizePx = (argc > 2) ? static_cast<float>(std::atof(argv[2])) : 48.0f;
+    // `--cjk` uses a hard-coded sample: the source file is UTF-8 and compiled
+    // with /utf-8, whereas a command-line argument is re-encoded to the ANSI
+    // code page by the CRT and would not be UTF-8 on a Chinese system.
+    const bool  cjkMode = (argc > 1) && std::strcmp(argv[1], "--cjk") == 0;
+    const char* sample  = cjkMode ? "中文测试 日本語 한국어 ✓"
+                                  : ((argc > 1) ? argv[1] : "Hello, TacUI!");
+    const float sizePx  = (argc > 2) ? static_cast<float>(std::atof(argv[2])) : 48.0f;
 
     tac::text::TextSystem text;
     if (!text.init("Segoe UI")) {
@@ -52,11 +57,28 @@ int main(int argc, char** argv) {
     std::printf("shaped \"%s\": %zu glyphs, width=%.2fpx\n\n",
                 sample, line.glyphs.size(), line.width);
 
+    // Every character above is non-blank, so nothing may resolve to .notdef
+    // (glyph 0) — which is what a missing font fallback produced, as tofu.
+    if (cjkMode) {
+        int missing = 0;
+        for (const auto& g : line.glyphs) {
+            if (g.index == 0) ++missing;
+        }
+        if (missing != 0) {
+            std::fprintf(stderr,
+                         "FAIL: %d of %zu CJK glyphs are .notdef (font fallback "
+                         "did not resolve them)\n",
+                         missing, line.glyphs.size());
+            return 1;
+        }
+        std::printf("CJK: %zu glyphs, none .notdef\n\n", line.glyphs.size());
+    }
+
     // Rasterise one glyph per distinct index and prove the ink is real.
     int rendered = 0;
     for (const auto& g : line.glyphs) {
         tac::text::GlyphBitmap bmp;
-        if (!text.rasterize(g.index, sizePx, bmp)) {
+        if (!text.rasterize(g.face, g.index, sizePx, bmp)) {
             std::fprintf(stderr, "FAIL: rasterize(glyph %u)\n", g.index);
             return 1;
         }
@@ -69,8 +91,8 @@ int main(int argc, char** argv) {
                 if (a) ++nonzero;
                 if (a > peak) peak = a;
             }
-            std::printf("glyph %-5u advance=%6.2f  bitmap=%ux%u  bearing=(%d,%d)  ink=%zu peak=%u\n",
-                        g.index, g.advance, bmp.width, bmp.height,
+            std::printf("glyph %-5u face=%u advance=%6.2f  bitmap=%ux%u  bearing=(%d,%d)  ink=%zu peak=%u\n",
+                        g.index, g.face, g.advance, bmp.width, bmp.height,
                         bmp.bearingX, bmp.bearingY, nonzero, peak);
         }
         // Only draw a few, or the output becomes unreadable.
@@ -100,7 +122,7 @@ int main(int argc, char** argv) {
 
         for (const auto& g : line.glyphs) {
             const tac::text::GlyphSlot* slot =
-                atlas.get(tac::text::GlyphKey{ g.index, bucket }, text, sizePx);
+                atlas.get(tac::text::GlyphKey{ g.index, bucket, g.face }, text, sizePx);
             if (!slot || slot->width <= 0.0f || slot->height <= 0.0f) continue;   // blank
 
             const float spanU = (slot->u1 - slot->u0) * static_cast<float>(atlasSize);
