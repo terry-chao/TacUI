@@ -118,6 +118,12 @@ public:
     Node rect();
     Node text(const char* utf8);
 
+    // C ABI build-plane hook: attach a leaf of `type` to the current scope and
+    // hand back the raw node so the host can fill in its properties through
+    // separate calls, then leave it alone. Application C++ uses rect()/text(),
+    // which return a fluent `Node` instead.
+    VNode* openLeaf(VType type, Key key);
+
     // What a component needs beyond emitting nodes: the interaction state to
     // draw itself from, and somewhere to declare what it does.
     Ui& ui() const;

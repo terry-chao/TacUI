@@ -77,6 +77,16 @@ enum {
     TUI_EVENT_MOUSE_DOWN  = 4,
     TUI_EVENT_MOUSE_UP    = 5,
     TUI_EVENT_KEY_DOWN    = 6,
+    TUI_EVENT_MOUSE_WHEEL = 7,
+    TUI_EVENT_CHAR        = 8,   // `codepoint` is valid
+};
+
+// Button styles, mirroring ui::ButtonStyle.
+enum {
+    TUI_BUTTON_PRIMARY   = 0,
+    TUI_BUTTON_SECONDARY = 1,
+    TUI_BUTTON_GHOST     = 2,
+    TUI_BUTTON_DANGER    = 3,
 };
 
 // ---------------------------------------------------------------------------
@@ -120,6 +130,119 @@ TUI_API void tui_rect(tui_ui* ui, float x, float y, float w, float h,
 // buffer only has to outlive the call. The baseline sits at y + ascent(size).
 TUI_API void tui_text(tui_ui* ui, float x, float y, float w, float h,
                       float font_size, uint32_t rgba8, const char* utf8);
+
+// ---------------------------------------------------------------------------
+// Build plane — controls
+//
+// The L2 control library, exported so a host language gets the same widgets the
+// C++ side has rather than re-implementing hover / hit testing / focus
+// (docs/components.md §4). Each is a *function*; none owns state.
+//
+// Like tui_push / tui_rect, every call here is only valid inside a build
+// callback. Colours are the same RGBA8 layout as tui_rect; alpha 0 means
+// "unset — take it from the theme".
+//
+// Callbacks take the host's own `user` pointer, which the binding uses to route
+// back to its object (the C ABI never holds a language closure).
+// ---------------------------------------------------------------------------
+
+typedef void (*tui_click_fn)(void* user);
+typedef void (*tui_bool_fn)(void* user, int32_t value);
+typedef void (*tui_float_fn)(void* user, float value);
+typedef void (*tui_index_fn)(void* user, int32_t index);
+
+TUI_API void tui_label(tui_ui* ui, uint64_t key,
+                       float x, float y, float w, float h,
+                       const char* utf8, float size, uint32_t rgba8, int32_t strong);
+
+TUI_API void tui_button(tui_ui* ui, uint64_t key,
+                        float x, float y, float w, float h,
+                        const char* utf8, uint32_t style, int32_t enabled,
+                        tui_click_fn cb, void* user);
+
+TUI_API void tui_checkbox(tui_ui* ui, uint64_t key,
+                          float x, float y, float w, float h,
+                          const char* utf8, int32_t checked, int32_t enabled,
+                          tui_bool_fn cb, void* user);
+
+TUI_API void tui_radio(tui_ui* ui, uint64_t key,
+                       float x, float y, float w, float h,
+                       const char* utf8, int32_t selected, int32_t enabled,
+                       tui_click_fn cb, void* user);
+
+TUI_API void tui_toggle(tui_ui* ui, uint64_t key,
+                        float x, float y, float w, float h,
+                        const char* utf8, int32_t on, int32_t enabled,
+                        tui_bool_fn cb, void* user);
+
+TUI_API void tui_slider(tui_ui* ui, uint64_t key,
+                        float x, float y, float w, float h,
+                        float value, float min, float max, float step,
+                        int32_t enabled, tui_float_fn cb, void* user);
+
+TUI_API void tui_progress(tui_ui* ui, uint64_t key,
+                          float x, float y, float w, float h,
+                          float value, uint32_t rgba8);
+
+TUI_API void tui_divider(tui_ui* ui, uint64_t key,
+                         float x, float y, float w, float h, uint32_t rgba8);
+
+// `labels` is an array of `count` NUL-terminated UTF-8 strings, borrowed for
+// the duration of the call. Segment keys are `first_key + i`.
+TUI_API void tui_tabs(tui_ui* ui, uint64_t first_key,
+                      float x, float y, float w, float h,
+                      const char* const* labels, int32_t count, int32_t selected,
+                      tui_index_fn cb, void* user);
+
+// Opens a themed container. Children pushed after this call land inside it, so
+// the host must close it with tui_pop — the same push/pop contract as
+// tui_push(TUI_NODE_STACK, key).
+TUI_API void tui_panel(tui_ui* ui, uint64_t key,
+                       float x, float y, float w, float h,
+                       uint32_t fill, float radius, int32_t border);
+
+// ---------------------------------------------------------------------------
+// Input injection
+// ---------------------------------------------------------------------------
+
+// Feeds one event straight into the framework, the same path the run loop uses.
+// For an embedding host that owns its window loop and forwards its own events.
+//
+//   type      one of the TUI_EVENT_* constants
+//   x, y      client-relative pixels
+//   key       virtual-key-independent code: for TUI_EVENT_KEY_DOWN it is a
+//             TUI_KEY_* value; for TUI_EVENT_CHAR, `codepoint` is used instead
+//   codepoint Unicode codepoint, for TUI_EVENT_CHAR
+//   wheel     notches, positive away from the user, for TUI_EVENT_MOUSE_WHEEL
+//   shift     modifier state for keyboard events
+TUI_API void tui_dispatch_event(tui_ui* ui, int32_t type, float x, float y,
+                                uint32_t key, uint32_t codepoint, float wheel,
+                                int32_t shift);
+
+// Rebuilds and reconciles if the tree is dirty. Returns 1 when a rebuild
+// actually happened. tui_run drives this every frame; an embedding host that
+// owns its own loop — or a headless test — calls it directly.
+TUI_API int32_t tui_update(tui_ui* ui);
+
+// Key codes accepted by tui_dispatch_event for TUI_EVENT_KEY_DOWN. Printable
+// input goes through TUI_EVENT_CHAR instead. Mirrors ui::KeyCode.
+enum {
+    TUI_KEY_UNKNOWN   = 0,
+    TUI_KEY_TAB       = 2,
+    TUI_KEY_ENTER     = 3,
+    TUI_KEY_ESCAPE    = 4,
+    TUI_KEY_BACKSPACE = 5,
+    TUI_KEY_DELETE    = 6,
+    TUI_KEY_LEFT      = 7,
+    TUI_KEY_RIGHT     = 8,
+    TUI_KEY_UP        = 9,
+    TUI_KEY_DOWN      = 10,
+    TUI_KEY_HOME      = 11,
+    TUI_KEY_END       = 12,
+    TUI_KEY_PAGE_UP   = 13,
+    TUI_KEY_PAGE_DOWN = 14,
+    TUI_KEY_SPACE     = 15,
+};
 
 // ---------------------------------------------------------------------------
 // State

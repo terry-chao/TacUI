@@ -184,4 +184,10 @@ Node Builder::text(const char* utf8) {
     return Node(node);
 }
 
+VNode* Builder::openLeaf(VType type, Key key) {
+    VNode* node = arena_.make(type, key);
+    attach(node);
+    return node;
+}
+
 } // namespace tac::ui

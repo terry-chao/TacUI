@@ -10,7 +10,10 @@
 #include <string>
 #include <vector>
 
+#include "tacui/builder.hpp"
+#include "tacui/controls.hpp"
 #include "tacui/host.hpp"
+#include "tacui/input.hpp"
 #include "tacui/ui.hpp"
 
 using namespace tac;
@@ -53,6 +56,14 @@ int32_t toCApi(host::EventType t) {
     return -1;
 }
 
+// Same packing as tui_rect: R in the low byte, A in the high byte.
+Color unpackRgba8(uint32_t v) {
+    return Color::rgba8(static_cast<uint8_t>(v & 0xFFu),
+                        static_cast<uint8_t>((v >> 8) & 0xFFu),
+                        static_cast<uint8_t>((v >> 16) & 0xFFu),
+                        static_cast<uint8_t>((v >> 24) & 0xFFu));
+}
+
 } // namespace
 
 struct tui_ui {
@@ -60,9 +71,16 @@ struct tui_ui {
     tui_host host{};
 
     // Build plane — live only inside the build callback.
-    ui::VNodeArena*         arena = nullptr;
-    std::vector<ui::VNode*> stack;
-    ui::VNode*              buildRoot = nullptr;
+    //
+    // The build plane runs on a real ui::Builder so the C ABI and C++ share one
+    // control library. `scopes` holds the open containers (each `Scope` closes
+    // itself when destroyed, i.e. on tui_pop); `frameKind` records what each
+    // push was so a pop knows whether to close a container or drop a leaf.
+    ui::Builder*           builder = nullptr;
+    ui::VNodeArena*        arena   = nullptr;   // for tui_text's string copy
+    std::vector<ui::Scope> scopes;
+    std::vector<uint8_t>   frameKind;           // TUI_NODE_* per open frame
+    ui::VNode*             pendingLeaf = nullptr;
 
     // Handle table.
     std::vector<HandleEntry> handles;
@@ -152,21 +170,27 @@ void tui_set_host(tui_ui* ui, const tui_host* host) {
     ui->host = host ? *host : tui_host{};
 
     ui->ui.init([ui](ui::BuildContext& ctx) -> ui::VNode* {
-        ui::VNodeArena& arena = ctx.arena;
-        ui->arena     = &arena;
-        ui->stack.clear();
-        ui->buildRoot = nullptr;
+        ui::Builder b(ctx);
+        ui->builder     = &b;
+        ui->arena       = &ctx.arena;
+        ui->pendingLeaf = nullptr;
+        ui->scopes.clear();
+        ui->frameKind.clear();
 
         if (ui->host.build) {
             ui->host.build(ui->host.user);
         }
 
-        ui->arena = nullptr;
-        if (!ui->stack.empty()) {
-            warn("build callback left %zu nodes unclosed", ui->stack.size());
-            ui->stack.clear();
+        // Close any container the host forgot, before the builder dies.
+        if (!ui->scopes.empty()) {
+            warn("build callback left %zu containers unclosed", ui->scopes.size());
         }
-        return ui->buildRoot;
+        ui->scopes.clear();
+        ui->frameKind.clear();
+        ui->pendingLeaf = nullptr;
+        ui->builder    = nullptr;
+        ui->arena      = nullptr;
+        return b.root();
     });
 }
 
@@ -175,66 +199,251 @@ void tui_set_host(tui_ui* ui, const tui_host* host) {
 // ---------------------------------------------------------------------------
 
 void tui_push(tui_ui* ui, uint32_t kind, uint64_t key) {
-    if (!ui || !ui->arena) {
+    if (!ui || !ui->builder) {
         warn("tui_push called outside a build callback");
         return;
     }
 
-    ui::VType type = ui::VType::Stack;
-    if (kind == TUI_NODE_RECT)      type = ui::VType::Rect;
-    else if (kind == TUI_NODE_TEXT) type = ui::VType::Text;
-    ui::VNode* v = ui->arena->make(type, key);
-    if (!v) return;
-
-    if (ui->stack.empty()) {
-        if (ui->buildRoot) {
-            warn("build callback emitted more than one root node");
-            return;
-        }
-        ui->buildRoot = v;
+    if (kind == TUI_NODE_STACK) {
+        ui->scopes.push_back(ui->builder->stack(key));
     } else {
-        ui->arena->addChild(ui->stack.back(), v);
+        const ui::VType type = (kind == TUI_NODE_TEXT) ? ui::VType::Text
+                                                       : ui::VType::Rect;
+        ui->pendingLeaf = ui->builder->openLeaf(type, key);
     }
-    ui->stack.push_back(v);
+    ui->frameKind.push_back(static_cast<uint8_t>(kind));
 }
 
 void tui_pop(tui_ui* ui) {
-    if (!ui || ui->stack.empty()) {
+    if (!ui) return;
+    if (ui->frameKind.empty()) {
         warn("tui_pop without a matching tui_push");
         return;
     }
-    ui->stack.pop_back();
+    const uint8_t kind = ui->frameKind.back();
+    ui->frameKind.pop_back();
+    if (kind == TUI_NODE_STACK) {
+        if (!ui->scopes.empty()) ui->scopes.pop_back();   // ~Scope closes it
+    } else {
+        ui->pendingLeaf = nullptr;
+    }
 }
 
 void tui_rect(tui_ui* ui, float x, float y, float w, float h,
               float corner_radius, uint32_t rgba8) {
-    if (!ui || ui->stack.empty()) {
+    if (!ui || !ui->pendingLeaf) {
         warn("tui_rect outside a pushed node");
         return;
     }
-    ui::VNode* v = ui->stack.back();
+    ui::VNode* v = ui->pendingLeaf;
     v->bounds       = Rect{ x, y, w, h };
     v->cornerRadius = corner_radius;
-    v->color        = Color::rgba8(static_cast<uint8_t>(rgba8 & 0xFFu),
-                                   static_cast<uint8_t>((rgba8 >> 8) & 0xFFu),
-                                   static_cast<uint8_t>((rgba8 >> 16) & 0xFFu),
-                                   static_cast<uint8_t>((rgba8 >> 24) & 0xFFu));
+    v->color        = unpackRgba8(rgba8);
 }
 
 void tui_text(tui_ui* ui, float x, float y, float w, float h,
               float font_size, uint32_t rgba8, const char* utf8) {
-    if (!ui || !ui->arena || ui->stack.empty()) {
+    if (!ui || !ui->arena || !ui->pendingLeaf) {
         warn("tui_text outside a pushed node");
         return;
     }
-    ui::VNode* v = ui->stack.back();
+    ui::VNode* v = ui->pendingLeaf;
     v->bounds   = Rect{ x, y, w, h };
     v->fontSize = font_size;
-    v->color    = Color::rgba8(static_cast<uint8_t>(rgba8 & 0xFFu),
-                               static_cast<uint8_t>((rgba8 >> 8) & 0xFFu),
-                               static_cast<uint8_t>((rgba8 >> 16) & 0xFFu),
-                               static_cast<uint8_t>((rgba8 >> 24) & 0xFFu));
+    v->color    = unpackRgba8(rgba8);
     v->text     = ui->arena->strdup(utf8 ? utf8 : "");
+}
+
+// ---------------------------------------------------------------------------
+// Build plane — controls
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Every control needs a live build callback; this keeps the guard in one place
+// so a mis-timed call is a warning rather than a crash.
+ui::Builder* activeBuilder(tui_ui* ui, const char* what) {
+    if (!ui || !ui->builder) {
+        warn("%s called outside a build callback", what);
+        return nullptr;
+    }
+    return ui->builder;
+}
+
+} // namespace
+
+void tui_label(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+               const char* utf8, float size, uint32_t rgba8, int32_t strong) {
+    ui::Builder* b = activeBuilder(ui, "tui_label");
+    if (!b) return;
+    ui::LabelProps p;
+    p.text   = utf8 ? utf8 : "";
+    p.size   = size;
+    p.color  = unpackRgba8(rgba8);
+    p.strong = strong != 0;
+    ui::label(*b, key, Rect{ x, y, w, h }, p);
+}
+
+void tui_button(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                const char* utf8, uint32_t style, int32_t enabled,
+                tui_click_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_button");
+    if (!b) return;
+    ui::ButtonProps p;
+    p.label   = utf8 ? utf8 : "";
+    p.style   = static_cast<ui::ButtonStyle>(style <= TUI_BUTTON_DANGER ? style
+                                                                       : TUI_BUTTON_SECONDARY);
+    p.enabled = enabled != 0;
+    ui::ClickFn fn;
+    if (cb) fn = [cb, user] { cb(user); };
+    ui::button(*b, key, Rect{ x, y, w, h }, p, std::move(fn));
+}
+
+void tui_checkbox(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                  const char* utf8, int32_t checked, int32_t enabled,
+                  tui_bool_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_checkbox");
+    if (!b) return;
+    ui::CheckboxProps p;
+    p.label   = utf8 ? utf8 : "";
+    p.checked = checked != 0;
+    p.enabled = enabled != 0;
+    ui::BoolFn fn;
+    if (cb) fn = [cb, user](bool v) { cb(user, v ? 1 : 0); };
+    ui::checkbox(*b, key, Rect{ x, y, w, h }, p, std::move(fn));
+}
+
+void tui_radio(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+               const char* utf8, int32_t selected, int32_t enabled,
+               tui_click_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_radio");
+    if (!b) return;
+    ui::RadioProps p;
+    p.label    = utf8 ? utf8 : "";
+    p.selected = selected != 0;
+    p.enabled  = enabled != 0;
+    ui::ClickFn fn;
+    if (cb) fn = [cb, user] { cb(user); };
+    ui::radio(*b, key, Rect{ x, y, w, h }, p, std::move(fn));
+}
+
+void tui_toggle(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                const char* utf8, int32_t on, int32_t enabled,
+                tui_bool_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_toggle");
+    if (!b) return;
+    ui::SwitchProps p;
+    p.label   = utf8 ? utf8 : "";
+    p.on      = on != 0;
+    p.enabled = enabled != 0;
+    ui::BoolFn fn;
+    if (cb) fn = [cb, user](bool v) { cb(user, v ? 1 : 0); };
+    ui::toggle(*b, key, Rect{ x, y, w, h }, p, std::move(fn));
+}
+
+void tui_slider(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                float value, float min, float max, float step,
+                int32_t enabled, tui_float_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_slider");
+    if (!b) return;
+    ui::SliderProps p;
+    p.value   = value;
+    p.min     = min;
+    p.max     = max;
+    p.step    = step;
+    p.enabled = enabled != 0;
+    ui::FloatFn fn;
+    if (cb) fn = [cb, user](float v) { cb(user, v); };
+    ui::slider(*b, key, Rect{ x, y, w, h }, p, std::move(fn));
+}
+
+void tui_progress(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                  float value, uint32_t rgba8) {
+    ui::Builder* b = activeBuilder(ui, "tui_progress");
+    if (!b) return;
+    ui::ProgressProps p;
+    p.value = value;
+    p.color = unpackRgba8(rgba8);
+    ui::progressBar(*b, key, Rect{ x, y, w, h }, p);
+}
+
+void tui_divider(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+                 uint32_t rgba8) {
+    ui::Builder* b = activeBuilder(ui, "tui_divider");
+    if (!b) return;
+    ui::DividerProps p;
+    p.color = unpackRgba8(rgba8);
+    ui::divider(*b, key, Rect{ x, y, w, h }, p);
+}
+
+void tui_tabs(tui_ui* ui, uint64_t first_key, float x, float y, float w, float h,
+              const char* const* labels, int32_t count, int32_t selected,
+              tui_index_fn cb, void* user) {
+    ui::Builder* b = activeBuilder(ui, "tui_tabs");
+    if (!b) return;
+    ui::TabsProps p;
+    p.labels   = labels;
+    p.count    = count;
+    p.selected = selected;
+    ui::IndexFn fn;
+    if (cb) fn = [cb, user](int i) { cb(user, i); };
+    ui::tabs(*b, first_key, Rect{ x, y, w, h }, p, std::move(fn));
+}
+
+void tui_panel(tui_ui* ui, uint64_t key, float x, float y, float w, float h,
+               uint32_t fill, float radius, int32_t border) {
+    ui::Builder* b = activeBuilder(ui, "tui_panel");
+    if (!b) return;
+    ui::PanelProps p;
+    p.fill   = unpackRgba8(fill);
+    p.radius = radius;
+    p.border = border != 0;
+
+    // A container: it stays open until the host calls tui_pop, exactly like
+    // tui_push(TUI_NODE_STACK, key). Children pushed next land inside it.
+    ui->scopes.push_back(ui::panel(*b, key, Rect{ x, y, w, h }, p));
+    ui->frameKind.push_back(static_cast<uint8_t>(TUI_NODE_STACK));
+}
+
+// ---------------------------------------------------------------------------
+// Input injection
+// ---------------------------------------------------------------------------
+
+void tui_dispatch_event(tui_ui* ui, int32_t type, float x, float y,
+                        uint32_t key, uint32_t codepoint, float wheel,
+                        int32_t shift) {
+    if (!ui) return;
+
+    ui::InputEvent ev;
+    ev.x         = x;
+    ev.y         = y;
+    ev.shift     = shift != 0;
+    ev.codepoint = codepoint;
+    ev.wheel     = wheel;
+
+    switch (type) {
+    case TUI_EVENT_MOUSE_MOVE:  ev.type = ui::InputEventType::MouseMove;  break;
+    case TUI_EVENT_MOUSE_LEAVE: ev.type = ui::InputEventType::MouseLeave; break;
+    case TUI_EVENT_MOUSE_DOWN:  ev.type = ui::InputEventType::MouseDown;  break;
+    case TUI_EVENT_MOUSE_UP:    ev.type = ui::InputEventType::MouseUp;    break;
+    case TUI_EVENT_MOUSE_WHEEL: ev.type = ui::InputEventType::MouseWheel; break;
+    case TUI_EVENT_CHAR:
+        ev.type = ui::InputEventType::KeyDown;
+        ev.code = ui::KeyCode::Character;
+        break;
+    case TUI_EVENT_KEY_DOWN:
+        ev.type = ui::InputEventType::KeyDown;
+        ev.code = static_cast<ui::KeyCode>(key);
+        break;
+    default:
+        return;
+    }
+    ui->ui.dispatchEvent(ev);
+}
+
+int32_t tui_update(tui_ui* ui) {
+    if (!ui) return 0;
+    return ui->ui.update() ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
