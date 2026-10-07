@@ -286,6 +286,7 @@ M0 **不是** "Hello World 按钮"。M0 的任务是**验证架构里最冒险�
 7. **`ui::Stats` 加了字段但 C ABI 的 `tui_stats` 没同步** —— 而 **ctypes 不校验结构体大小**，`tui_get_stats` 会径直写穿宿主侧的缓冲区。这是静默内存破坏。加了 `tui_stats_size()`，绑定在 import 时比对 sizeof，把静默破坏变成加载期报错。
 8. **`liveOverrides` 只在 `update()` 里赋值**，而树不脏时 `update()` 直接 early-return，所以这个值会停在第一次构建时的状态。改为在 `paint()` 里统计（它本来就在遍历树）。
 9. **文字发糊**：字形的 pen advance 是小数（排印正确），但按小数位置画位图会被线性采样器重采样。修法是**吸附字形原点到整像素、保留小数 advance**。间距不受影响（同一基线上的字形相对偏移恒为整数），字形变清晰。
+10. **文字仍然发糊（#9 的续集，另一个原因）**：atlas 的 UV 用了"纹素中心内缩"（`(x+0.5)/size … (x+w-0.5)/size`），而 quad 横跨的是**像素边缘到边缘**（`center ± halfSize`）。两者不匹配 → 把 `w` 个纹素塞进 `w` 个像素，**每个像素都在双线性混合相邻纹素**，字形被系统性重采样、发软。改成边界到边界（`x/size … (x+w)/size`）后是严格 1:1 贴图。实测文字密集区域边沿能量提升约 **1.65x**，纯背景区域 0 像素变化；`textprobe` 现在断言 UV 跨度 == 位图尺寸。
 
 **M0 之后的工作**见 [components.md](components.md)：输入系统（命中测试 / hover / press / 焦点 / Tab）、主题令牌、12 个 L2 控件、`ScrollView` / `ListView` 与相对布局（row / column）已完成（见 [布局](layout.md)）；其余 L2、通用约束传播、`Popup`、IME 待做。
 
