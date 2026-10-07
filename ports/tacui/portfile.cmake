@@ -1,6 +1,6 @@
-# TacUI — Windows/MSVC only: the renderer is D3D12 and the text stack is
-# DirectWrite, so the port declares `supports: windows` and vcpkg only asks it
-# to build on the Windows triplets.
+# TacUI — Windows/MSVC/x64 only: the renderer is D3D12 and the text stack is
+# DirectWrite, so the port declares `supports: windows & x64 & !uwp` and vcpkg
+# only asks it to build on the x64 Windows triplets.
 
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
