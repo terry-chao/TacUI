@@ -6,7 +6,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO            terry-chao/TacUI
     REF             "v${VERSION}"
-    SHA512          0   # <-- replace with the value vcpkg prints on the first run
+    SHA512          a4a385a7212c3dd3248a7cb56d195e8fbef0bb707d0001a23f648ab424b5bef9710e07b4081749495813fef74614aa5d7e243a6d35f9cab01175e25c89eb0651
     HEAD_REF        main
 )
 

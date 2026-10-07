@@ -14,7 +14,8 @@ and builds it with the install rules in the top-level `CMakeLists.txt`.
 ## Publishing it
 
 The port points at a **git tag**, so the tag has to exist before the port can
-resolve. The order is:
+resolve. `0.1.0` is done — tag pushed, hash filled in, and all three triplets
+built from that tarball. This is the recipe for the next version:
 
 1. Land the install rules and the version bump on `main`.
 2. `git tag v0.1.0 && git push origin v0.1.0`.
