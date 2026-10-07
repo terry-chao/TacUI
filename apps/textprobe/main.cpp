@@ -2,6 +2,7 @@
 // Prints shaping results and an ASCII rendering of a rasterised glyph, so a
 // failure here is obvious without a window or a screenshot.
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -77,6 +78,45 @@ int main(int argc, char** argv) {
             std::printf("\n");
         }
         ++rendered;
+    }
+
+    // The atlas must hand out edge-to-edge UVs: the quad is exactly the glyph's
+    // pixel size, so a UV span of w texels over w pixels is a 1:1 blit. Inset
+    // ("texel-centre") UVs would squeeze w texels into w pixels and resample
+    // every glyph — this catches that regression without a GPU.
+    {
+        tac::text::GlyphAtlas atlas;
+        const uint32_t atlasSize = tac::rhi::kGlyphAtlasSize;
+        if (!atlas.init(atlasSize)) {
+            std::fprintf(stderr, "FAIL: GlyphAtlas::init\n");
+            return 1;
+        }
+
+        const float   bucketF = sizePx + 0.5f;
+        const uint16_t bucket = static_cast<uint16_t>(bucketF);
+        int checked = 0;
+        bool uvOk   = true;
+
+        for (const auto& g : line.glyphs) {
+            const tac::text::GlyphSlot* slot =
+                atlas.get(tac::text::GlyphKey{ g.index, bucket }, text, sizePx);
+            if (!slot || slot->width <= 0.0f || slot->height <= 0.0f) continue;   // blank
+
+            const float spanU = (slot->u1 - slot->u0) * static_cast<float>(atlasSize);
+            const float spanV = (slot->v1 - slot->v0) * static_cast<float>(atlasSize);
+            if (std::fabs(spanU - slot->width) > 0.01f ||
+                std::fabs(spanV - slot->height) > 0.01f) {
+                std::fprintf(stderr,
+                             "FAIL: glyph %u UV span is %.3fx%.3f texels but the "
+                             "bitmap is %.0fx%.0f px (would resample)\n",
+                             g.index, spanU, spanV, slot->width, slot->height);
+                uvOk = false;
+            }
+            ++checked;
+        }
+
+        if (!uvOk) return 1;
+        std::printf("\natlas UVs: %d glyphs, span == bitmap size (1:1 blit)\n", checked);
     }
 
     text.shutdown();
