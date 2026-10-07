@@ -59,9 +59,13 @@ there.
 
 ## Distributing without the official registry
 
-An overlay port works for one machine. For a team, register it as a git
-registry instead — same port directory, but vcpkg tracks it in
-`vcpkg-configuration.json`:
+An overlay port needs a local directory, which means every consumer has to
+clone this repository. A git registry removes that: vcpkg clones the registry
+itself, so consumers only need a repository URL and a baseline commit.
+
+The layout is already here — `ports/tacui/` plus `versions/`, which is the
+version database (`versions/t-/tacui.json` and `versions/baseline.json`).
+Consumers write this into their own `vcpkg-configuration.json`:
 
 ```json
 {
@@ -70,12 +74,28 @@ registry instead — same port directory, but vcpkg tracks it in
       "kind": "git",
       "repository": "https://github.com/terry-chao/TacUI",
       "reference": "main",
-      "packages": ["tacui"],
-      "baseline": "<commit sha>"
+      "baseline": "<commit sha>",
+      "packages": ["tacui"]
     }
   ]
 }
 ```
 
-A git registry needs a `versions/tacui.json` alongside `ports/` and the port
-directory at the repository root, which this repo does not have yet.
+The `baseline` is a commit SHA, and vcpkg reads `versions/baseline.json` at
+that commit — so it has to be a commit that already contains `versions/`.
+
+### Maintaining it
+
+`versions/t-/tacui.json` records, per version, the `git-tree` of the
+`ports/tacui` directory. Recompute it with:
+
+```sh
+git rev-parse HEAD:ports/tacui
+```
+
+Every time `ports/tacui/` changes, that hash changes too. Either bump the
+version in `ports/tacui/vcpkg.json` and add a new entry, or — for a change that
+does not alter what gets built, like a comment fix — bump `port-version` and
+update the existing entry's `git-tree`. Forget this and vcpkg builds a port
+that does not match the one in the tree, which is a confusing way to spend an
+afternoon.
