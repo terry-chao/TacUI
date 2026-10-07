@@ -50,12 +50,15 @@ target_link_libraries(app PRIVATE TacUI::tacui)        # only the C ABI
 its own and deliberately carries no C++ compile options, so a C or
 host-language consumer linking it gets no surprises.
 
-Or let vcpkg do the work — [`ports/`](ports/README.md) holds an overlay port
-covering `x64-windows`, `x64-windows-static` and `x64-windows-static-md`:
+Three ways to get it there, all ending in the same link line — the file
+contents are in [Building and running](docs/getting-started.md):
 
-```sh
-vcpkg install tacui --overlay-ports=<this repo>/ports
-```
+- **vcpkg git registry** — no clone; vcpkg fetches this repo as a registry
+- **CMake `FetchContent`** — no vcpkg involved at all
+- **vcpkg overlay port** — `vcpkg install tacui --overlay-ports=<this repo>/ports`
+
+[`ports/`](ports/README.md) holds the port itself, covering `x64-windows`,
+`x64-windows-static` and `x64-windows-static-md`.
 
 ## Writing a UI
 

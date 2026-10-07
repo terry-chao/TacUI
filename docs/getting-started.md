@@ -85,7 +85,59 @@ target_link_libraries(app PRIVATE TacUI::tacui)        # 只要 C ABI
 C++ 侧用 `TacUI::tacui_host`，它会把 `core / rhi / text / platform / tools`
 整条依赖链一起带过来。
 
-不想自己装就用仓库里的 overlay port：
+### 怎么把它拉进来
+
+三条路，链接行完全一样，差别只在要不要 vcpkg、要不要本地 clone。
+
+**一、vcpkg git registry** —— 不用 clone 本仓库，vcpkg 自己去拉。对方的工程里放：
+
+```json
+// vcpkg.json
+{ "name": "my-tool", "version": "0.0.1", "dependencies": ["tacui"] }
+```
+
+```json
+// vcpkg-configuration.json
+{
+  "default-registry": {
+    "kind": "builtin",
+    "baseline": "<本地 vcpkg 的 commit：git -C <vcpkg> rev-parse HEAD>"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/terry-chao/TacUI",
+      "reference": "main",
+      "baseline": "<含 versions/ 的 commit>",
+      "packages": ["tacui"]
+    }
+  ]
+}
+```
+
+`default-registry` 那一项不能省 —— `tacui` 自己依赖 `vcpkg-cmake` 和
+`vcpkg-cmake-config`，它们得有个默认 registry 兜底。之后照常配置，
+只在工具链文件上多一句话：
+
+```sh
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64 \
+  -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+```
+
+**二、CMake FetchContent** —— 不用 vcpkg，也不用 clone：
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(TacUI
+    GIT_REPOSITORY https://github.com/terry-chao/TacUI.git
+    GIT_TAG        <tag 或 commit>)
+FetchContent_MakeAvailable(TacUI)
+```
+
+被 `add_subdirectory` 拉进来时，示例程序和 install 规则默认都是关的，
+产物也只落在自己的 `_deps/tacui-build/` 下，不会污染对方的构建目录。
+
+**三、vcpkg overlay port** —— 本地已经有 clone 时最省事：
 
 ```sh
 vcpkg install tacui --overlay-ports=<仓库>/ports
@@ -93,7 +145,7 @@ vcpkg install tacui --overlay-ports=<仓库>/ports
 
 该 port 覆盖 `x64-windows`、`x64-windows-static`、`x64-windows-static-md`
 三个 triplet。静态 triplet 会把 `tacui` 从 DLL 变成静态库（C ABI 那个 target
-也一样），因为「静态 CRT 的 DLL」并不存在。细节和提交流程见
+也一样），因为「静态 CRT 的 DLL」并不存在。细节、发布与 registry 维护流程见
 [ports/README.md](https://github.com/terry-chao/TacUI/blob/main/ports/README.md)。
 
 ---
