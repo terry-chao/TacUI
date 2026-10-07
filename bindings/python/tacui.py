@@ -7,6 +7,9 @@ itself, and this file is the Python shape of it.
 The split this demonstrates:
   * C++ owns the window, the GPU device and the frame loop  (tui_run)
   * Python owns the UI: the build callback, event handling and animations
+  * the control library is shared: ui.button(...) reaches the same widget the
+    C++ side uses, and tui_dispatch_event / tui_update let a windowless test
+    drive it (see controls_test.py)
 
 Requires tacui.dll — either built from the capi/ target, or installed by
 vcpkg. Set TACUI_DLL to point at it when it lives somewhere neither of those
@@ -47,6 +50,30 @@ EVENT_MOUSE_LEAVE = 3
 EVENT_MOUSE_DOWN = 4
 EVENT_MOUSE_UP = 5
 EVENT_KEY_DOWN = 6
+EVENT_MOUSE_WHEEL = 7
+EVENT_CHAR = 8
+
+BUTTON_PRIMARY = 0
+BUTTON_SECONDARY = 1
+BUTTON_GHOST = 2
+BUTTON_DANGER = 3
+
+# Key codes for EVENT_KEY_DOWN; printable input goes through EVENT_CHAR.
+KEY_UNKNOWN = 0
+KEY_TAB = 2
+KEY_ENTER = 3
+KEY_ESCAPE = 4
+KEY_BACKSPACE = 5
+KEY_DELETE = 6
+KEY_LEFT = 7
+KEY_RIGHT = 8
+KEY_UP = 9
+KEY_DOWN = 10
+KEY_HOME = 11
+KEY_END = 12
+KEY_PAGE_UP = 13
+KEY_PAGE_DOWN = 14
+KEY_SPACE = 15
 
 VK_ESCAPE = 0x1B
 
@@ -95,6 +122,14 @@ BUILD_FN = CFUNCTYPE(None, c_void_p)
 FRAME_FN = CFUNCTYPE(None, c_void_p, c_double)
 EVENT_FN = CFUNCTYPE(None, c_void_p, c_int32, c_int32, c_int32, c_uint32)
 DUMP_FN = CFUNCTYPE(None, c_void_p, c_int32, c_char_p)
+
+# Control callbacks. The C ABI hands back the `user` pointer it was given, which
+# the binding always passes as null — the closure in Python is what carries the
+# state, so the pointer is unused.
+CLICK_FN = CFUNCTYPE(None, c_void_p)
+BOOL_FN = CFUNCTYPE(None, c_void_p, c_int32)
+FLOAT_FN = CFUNCTYPE(None, c_void_p, c_float)
+INDEX_FN = CFUNCTYPE(None, c_void_p, c_int32)
 
 
 class Host(Structure):
@@ -157,6 +192,51 @@ _lib.tui_rect.argtypes = [
 _lib.tui_text.argtypes = [
     c_void_p, c_float, c_float, c_float, c_float, c_float, c_uint32, c_char_p
 ]
+
+_lib.tui_label.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_char_p, c_float, c_uint32, c_int32,
+]
+_lib.tui_button.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_char_p, c_uint32, c_int32, CLICK_FN, c_void_p,
+]
+_lib.tui_checkbox.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_char_p, c_int32, c_int32, BOOL_FN, c_void_p,
+]
+_lib.tui_radio.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_char_p, c_int32, c_int32, CLICK_FN, c_void_p,
+]
+_lib.tui_toggle.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_char_p, c_int32, c_int32, BOOL_FN, c_void_p,
+]
+_lib.tui_slider.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_float, c_float, c_float, c_float, c_int32, FLOAT_FN, c_void_p,
+]
+_lib.tui_progress.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float, c_float, c_uint32,
+]
+_lib.tui_divider.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float, c_uint32,
+]
+_lib.tui_tabs.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    POINTER(c_char_p), c_int32, c_int32, INDEX_FN, c_void_p,
+]
+_lib.tui_panel.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_uint32, c_float, c_int32,
+]
+
+_lib.tui_dispatch_event.argtypes = [
+    c_void_p, c_int32, c_float, c_float, c_uint32, c_uint32, c_float, c_int32,
+]
+_lib.tui_update.restype = c_int32
+_lib.tui_update.argtypes = [c_void_p]
 
 _lib.tui_state_get.restype = c_int64
 _lib.tui_state_get.argtypes = [c_void_p, c_uint32, c_int64]
@@ -244,6 +324,10 @@ class Ui:
         self._build_cb = None
         self._frame_cb = None
         self._event_cb = None
+        # ctypes callback objects are only valid while a reference exists, and
+        # the C side keeps calling them between builds — so the binding holds
+        # every control callback until the next build replaces it.
+        self._callbacks: list = []
 
     # -- build plane ------------------------------------------------------
 
@@ -278,6 +362,210 @@ class Ui:
         _lib.tui_push(self._ui, NODE_TEXT, key)
         _lib.tui_text(self._ui, x, y, w, h, size, color, content.encode("utf-8"))
         _lib.tui_pop(self._ui)
+
+    # -- controls (L2) ----------------------------------------------------
+    #
+    # The same control library the C++ side uses, over the ABI (docs/controls.md).
+    # A control is a function; the framework owns hover / press / focus, so the
+    # binding only says what it looks like and what to do when it fires.
+
+    def _click(self, fn) -> "CLICK_FN":
+        if fn is None:
+            return CLICK_FN()
+        cb = CLICK_FN(lambda _user: fn())
+        self._callbacks.append(cb)
+        return cb
+
+    def _bool(self, fn) -> "BOOL_FN":
+        if fn is None:
+            return BOOL_FN()
+        cb = BOOL_FN(lambda _user, v: fn(bool(v)))
+        self._callbacks.append(cb)
+        return cb
+
+    def _float(self, fn) -> "FLOAT_FN":
+        if fn is None:
+            return FLOAT_FN()
+        cb = FLOAT_FN(lambda _user, v: fn(v))
+        self._callbacks.append(cb)
+        return cb
+
+    def _index(self, fn) -> "INDEX_FN":
+        if fn is None:
+            return INDEX_FN()
+        cb = INDEX_FN(lambda _user, i: fn(i))
+        self._callbacks.append(cb)
+        return cb
+
+    def label(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        content: str,
+        *,
+        size: float = 0.0,
+        color: int = 0,
+        strong: bool = False,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_label(
+            self._ui, key, x, y, w, h,
+            content.encode("utf-8"), size, color, 1 if strong else 0,
+        )
+
+    def button(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        content: str,
+        *,
+        style: int = BUTTON_SECONDARY,
+        enabled: bool = True,
+        on_click=None,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_button(
+            self._ui, key, x, y, w, h, content.encode("utf-8"),
+            style, 1 if enabled else 0, self._click(on_click), None,
+        )
+
+    def checkbox(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        content: str,
+        *,
+        checked: bool = False,
+        enabled: bool = True,
+        on_change=None,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_checkbox(
+            self._ui, key, x, y, w, h, content.encode("utf-8"),
+            1 if checked else 0, 1 if enabled else 0, self._bool(on_change), None,
+        )
+
+    def radio(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        content: str,
+        *,
+        selected: bool = False,
+        enabled: bool = True,
+        on_select=None,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_radio(
+            self._ui, key, x, y, w, h, content.encode("utf-8"),
+            1 if selected else 0, 1 if enabled else 0, self._click(on_select), None,
+        )
+
+    def toggle(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        content: str = "",
+        *,
+        on: bool = False,
+        enabled: bool = True,
+        on_change=None,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_toggle(
+            self._ui, key, x, y, w, h, content.encode("utf-8"),
+            1 if on else 0, 1 if enabled else 0, self._bool(on_change), None,
+        )
+
+    def slider(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        *,
+        value: float = 0.0,
+        min: float = 0.0,
+        max: float = 1.0,
+        step: float = 0.0,
+        enabled: bool = True,
+        on_change=None,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_slider(
+            self._ui, key, x, y, w, h, value, min, max, step,
+            1 if enabled else 0, self._float(on_change), None,
+        )
+
+    def progress(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        *,
+        value: float,
+        color: int = 0,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_progress(self._ui, key, x, y, w, h, value, color)
+
+    def divider(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        *,
+        color: int = 0,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_divider(self._ui, key, x, y, w, h, color)
+
+    def tabs(
+        self,
+        first_key: int,
+        box: tuple[float, float, float, float],
+        labels: list[str],
+        *,
+        selected: int = 0,
+        on_select=None,
+    ) -> None:
+        x, y, w, h = box
+        encoded = [s.encode("utf-8") for s in labels]
+        arr = (c_char_p * len(encoded))(*encoded)
+        _lib.tui_tabs(
+            self._ui, first_key, x, y, w, h, arr, len(encoded), selected,
+            self._index(on_select), None,
+        )
+
+    def panel(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        *,
+        fill: int = 0,
+        radius: float = -1.0,
+        border: bool = True,
+    ) -> "_PanelCtx":
+        """A container. `with ui.panel(...): ...` — closes on block exit."""
+        x, y, w, h = box
+        _lib.tui_panel(self._ui, key, x, y, w, h, fill, radius,
+                       1 if border else 0)
+        return _PanelCtx(self)
+
+    # -- input injection --------------------------------------------------
+
+    def dispatch(self, kind: int, x: float = 0.0, y: float = 0.0, *,
+                 key: int = 0, codepoint: int = 0, wheel: float = 0.0,
+                 shift: bool = False) -> None:
+        _lib.tui_dispatch_event(self._ui, kind, x, y, key, codepoint, wheel,
+                                1 if shift else 0)
+
+    def click(self, key: int) -> None:
+        """Synthetic click at the centre of a node, by key."""
+        x, y, w, h = self.bounds(key)
+        cx, cy = x + w * 0.5, y + h * 0.5
+        self.dispatch(EVENT_MOUSE_DOWN, cx, cy)
+        self.dispatch(EVENT_MOUSE_UP, cx, cy)
+
+    def update(self) -> bool:
+        """Rebuild + reconcile if the tree is dirty. True when it rebuilt."""
+        return _lib.tui_update(self._ui) != 0
 
     # -- state ------------------------------------------------------------
 
@@ -340,13 +628,9 @@ class Ui:
 
     # -- run loop ---------------------------------------------------------
 
-    def run(
-        self,
-        app: "App",
-        title: str = "TacUI",
-        width: int = 1280,
-        height: int = 720,
-    ) -> int:
+    def _install(self, app: "App") -> None:
+        """Wire the callbacks and register the host. Shared by run() and the
+        headless path (update()/click()), so both drive the same Python UI."""
         self._app = app
         app.ui = self
         app.user = id(app)
@@ -355,6 +639,9 @@ class Ui:
         def _build(user):
             a = _APPS.get(user)
             if a:
+                # The framework clears its behaviour table before every build,
+                # so the callbacks from the previous build are unreachable now.
+                self._callbacks.clear()
                 a.build()
 
         def _frame(user, elapsed):
@@ -375,6 +662,14 @@ class Ui:
         host = Host(self._build_cb, self._frame_cb, self._event_cb, app.user)
         _lib.tui_set_host(self._ui, ctypes.byref(host))
 
+    def run(
+        self,
+        app: "App",
+        title: str = "TacUI",
+        width: int = 1280,
+        height: int = 720,
+    ) -> int:
+        self._install(app)
         try:
             return _lib.tui_run(self._ui, title.encode("utf-8"), width, height)
         finally:
@@ -407,6 +702,20 @@ class _StackCtx:
 
     def __enter__(self) -> "_StackCtx":
         _lib.tui_push(self._ui._ui, NODE_STACK, self._key)
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        _lib.tui_pop(self._ui._ui)
+
+
+class _PanelCtx:
+    """`with ui.panel(...): ...` — tui_panel opens a container, tui_pop closes
+    it, so a panel nests its children without a manual push/pop pair."""
+
+    def __init__(self, ui: Ui) -> None:
+        self._ui = ui
+
+    def __enter__(self) -> "_PanelCtx":
         return self
 
     def __exit__(self, *_exc) -> None:
