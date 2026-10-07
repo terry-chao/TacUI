@@ -329,7 +329,7 @@ core/ rhi/d3d12/ platform/ tools/ capi/*.cpp   ← 实现，不属于 API
 **顺带修的 ABI 缺陷：** `tui_run` / `tui_capture_next_frame` 原本收 `const wchar_t*`，而 `tacui.h` 自己写着「字符串一律 UTF-8」。且 `wchar_t` 在 Windows 是 2 字节、Linux 是 4 字节 —— **ABI 根本不跨平台**。已统一为 UTF-8，与 header 声明的规则一致。
 
 **M0 遗留的已知限制（进 M1 再解）：**
-- 矩形与字形是两个独立的 draw，所以**跨类型的绘制顺序不成立**（所有矩形先于所有文字）。需要统一的 draw list
+- ~~矩形与字形是两个独立的 draw，跨类型的绘制顺序不成立~~ —— ✅ **已解**：paint 现在按树序生成**有序 draw list**（同类型合并成 run，按提交顺序交错），`controls_gallery --paint-test` 直接断言交错顺序
 - atlas 无淘汰；满了就丢字形并计数
 - 灰度由 ClearType 三通道平均而来，与原生灰度 AA 不完全等价
 
