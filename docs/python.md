@@ -135,6 +135,22 @@ ui.update()                                       # 脏则重建，返回是否�
   所以合成事件和真实事件行为一致；
 - `tui_update` 让宿主自己驱动「脏则重建」，`tui_run` 每帧内部也调它。
 
+反方向 —— 宿主**接收**事件 —— 也补齐了。`tui_host.event` 现在收到一个
+`tui_event`（`type` / `x` / `y` / `key` / `codepoint` / `wheel` / `shift`），
+所以宿主 App 能自己处理滚轮与字符，而不只是拿到鼠标和按键：
+
+```python
+class App(tacui.App):
+    def event(self, ev):                     # ev.kind 是 EVENT_*
+        if ev.kind == tacui.EVENT_MOUSE_WHEEL:
+            app.zoom(-ev.wheel)
+        elif ev.kind == tacui.EVENT_CHAR:
+            app.feed(ev.codepoint)
+```
+
+这是 **ABI v2**：旧的五参数回调是 v1，签名变了就升一档。`tui_event_size()`
+让绑定在 import 时比对结构体大小 —— 和 `tui_stats_size()` 同款，把结构体漂移变成加载期报错。
+
 这让控件层可以**无窗口、无 GPU** 地验证：
 
 ```powershell
