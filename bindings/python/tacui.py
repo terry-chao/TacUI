@@ -8,7 +8,9 @@ The split this demonstrates:
   * C++ owns the window, the GPU device and the frame loop  (tui_run)
   * Python owns the UI: the build callback, event handling and animations
 
-Requires tacui.dll, built from the capi/ target.
+Requires tacui.dll — either built from the capi/ target, or installed by
+vcpkg. Set TACUI_DLL to point at it when it lives somewhere neither of those
+guesses.
 """
 
 from __future__ import annotations
@@ -113,20 +115,29 @@ def rgba(r: int, g: int, b: int, a: int = 255) -> int:
 
 
 def _load_library() -> ctypes.CDLL:
+    """Find tacui.dll.
+
+    Order: TACUI_DLL, then next to this file (a wheel, or a manual copy), then
+    the in-tree build. A vcpkg install puts the DLL under
+    <vcpkg>/installed/<triplet>/bin, which is deliberately not guessed at —
+    point TACUI_DLL there instead.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
+        os.environ.get("TACUI_DLL"),
         os.path.join(here, "tacui.dll"),
         os.path.join(here, "..", "..", "build", "bin", "tacui.dll"),
         os.path.join(here, "..", "..", "build", "bin", "Debug", "tacui.dll"),
     ]
     for path in candidates:
-        path = os.path.normpath(path)
-        if os.path.isfile(path):
-            return ctypes.CDLL(path)
+        if path and os.path.isfile(path):
+            return ctypes.CDLL(os.path.normpath(path))
 
     raise OSError(
         "tacui.dll not found. Build the capi target:\n"
-        "  cmake --build build --config Debug --target tacui"
+        "  cmake --build build --config Debug --target tacui\n"
+        "or point TACUI_DLL at an installed one — vcpkg puts it in\n"
+        "  <vcpkg>/installed/<triplet>/bin"
     )
 
 
