@@ -1,0 +1,16 @@
+@PACKAGE_INIT@
+
+# TacUI — the CMake package file. Consumed as:
+#
+#     find_package(TacUI CONFIG REQUIRED)
+#     target_link_libraries(app PRIVATE TacUI::tacui)        # the C ABI DLL
+#     target_link_libraries(app PRIVATE TacUI::tacui_host)   # the C++ shell
+#
+# TacUI links only to libraries that ship with Windows (dwrite, d3d12, dxgi,
+# dxguid, windowscodecs), so there is nothing to find_dependency() on — the
+# moment a third-party dependency appears, it has to be reintroduced here or
+# downstream configure steps fail with a missing-target error.
+
+include("${CMAKE_CURRENT_LIST_DIR}/TacUITargets.cmake")
+
+check_required_components(TacUI)
