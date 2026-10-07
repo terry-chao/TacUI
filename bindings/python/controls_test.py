@@ -30,12 +30,25 @@ K_DISABLED = 7
 K_TABS = 10  # + index
 K_PANEL = 20
 K_PANEL_LABEL = 21
+K_TEXT = 30
+K_LIST = 40
+K_LIST_ROW = 100  # + index
+K_SCROLL = 50
+K_SCROLLBAR = 51
 
 BOX_BUTTON = (20.0, 70.0, 120.0, 32.0)
 BOX_CHECK = (20.0, 120.0, 200.0, 24.0)
 BOX_TOGGLE = (20.0, 160.0, 200.0, 24.0)
 BOX_SLIDER = (20.0, 200.0, 240.0, 24.0)
 BOX_DISABLED = (150.0, 70.0, 120.0, 32.0)
+BOX_TEXT = (20.0, 340.0, 240.0, 32.0)
+BOX_LIST = (300.0, 210.0, 260.0, 140.0)
+BOX_SCROLL = (20.0, 400.0, 240.0, 110.0)
+
+LIST_COUNT = 30
+SCROLL_ROW_H = 26.0
+SCROLL_ROWS = 16
+SCROLL_CONTENT = SCROLL_ROW_H * SCROLL_ROWS
 
 
 class App(tacui.App):
@@ -47,6 +60,9 @@ class App(tacui.App):
         self.slider = 0.0
         self.tab = 0
         self.progress = 0.25
+        self.text = ""
+        self.list_selected = -1
+        self.list_labels = [f"Mesh_{i:02d}" for i in range(LIST_COUNT)]
 
     # -- handlers ---------------------------------------------------------
 
@@ -72,6 +88,14 @@ class App(tacui.App):
 
     def on_tab(self, index: int) -> None:
         self.tab = index
+        self._dirty()
+
+    def on_text(self, value: str) -> None:
+        self.text = value
+        self._dirty()
+
+    def on_select(self, index: int) -> None:
+        self.list_selected = index
         self._dirty()
 
     # -- build ------------------------------------------------------------
@@ -104,6 +128,26 @@ class App(tacui.App):
             with ui.panel(K_PANEL, (300.0, 70.0, 200.0, 120.0)):
                 ui.label(K_PANEL_LABEL, (316.0, 86.0, 160.0, 20.0),
                          "inside a panel", size=13.0)
+
+            ui.text_input(K_TEXT, BOX_TEXT, placeholder="type here",
+                          suffix="UTF-8", on_change=self.on_text)
+
+            ui.list_view(K_LIST, BOX_LIST, self.list_labels,
+                         selected=self.list_selected, row_height=28.0,
+                         row_gap=2.0, row_key_base=K_LIST_ROW,
+                         on_select=self.on_select)
+
+            # A scroll view: the library owns the offset, the host reads it to
+            # place the content.
+            with ui.scroll_view(K_SCROLL, BOX_SCROLL,
+                                content_height=SCROLL_CONTENT):
+                off = ui.scroll_offset(K_SCROLL)
+                for i in range(SCROLL_ROWS):
+                    y = BOX_SCROLL[1] + i * SCROLL_ROW_H - off
+                    ui.label(0, (BOX_SCROLL[0] + 8.0, y + 4.0, 200.0, 18.0),
+                             f"Row {i:02d}", size=12.0)
+            ui.scroll_bar(K_SCROLLBAR, K_SCROLL, BOX_SCROLL,
+                          content_height=SCROLL_CONTENT)
 
 
 def main() -> int:
@@ -166,6 +210,41 @@ def main() -> int:
     ui.click(K_TABS + 1)
     ui.update()
     check(app.tab == 1, "clicking a tab segment reports its index")
+
+    # --- text input: focus, then type --------------------------------
+    ui.click(K_TEXT)
+    ui.update()
+    ui.dispatch(tacui.EVENT_CHAR, codepoint=ord("h"))
+    ui.dispatch(tacui.EVENT_CHAR, codepoint=ord("i"))
+    ui.update()
+    check(ui.text_get(K_TEXT) == "hi", "typing reaches the field's buffer")
+    check(app.text == "hi", "the text callback reports the new value")
+
+    ui.dispatch(tacui.EVENT_KEY_DOWN, key=tacui.KEY_BACKSPACE)
+    ui.update()
+    check(ui.text_get(K_TEXT) == "h", "backspace edits the field")
+
+    ui.text_set(K_TEXT, "reset")
+    ui.update()
+    check(ui.text_get(K_TEXT) == "reset", "the host can set the field's text")
+
+    # --- list view: select a row, then scroll with the wheel ---------
+    ui.click(K_LIST_ROW + 2)
+    ui.update()
+    check(app.list_selected == 2, "clicking a list row reports its index")
+
+    lx, ly, lw, lh = BOX_LIST
+    before = ui.list_offset(K_LIST)
+    ui.dispatch(tacui.EVENT_MOUSE_WHEEL, lx + lw * 0.5, ly + lh * 0.5, wheel=-3.0)
+    ui.update()
+    check(ui.list_offset(K_LIST) > before, "the wheel scrolls the list")
+
+    # --- scroll view: the wheel moves its offset ---------------------
+    sx2, sy2, sw2, sh2 = BOX_SCROLL
+    ui.dispatch(tacui.EVENT_MOUSE_WHEEL, sx2 + sw2 * 0.5, sy2 + sh2 * 0.5,
+                wheel=-3.0)
+    ui.update()
+    check(ui.scroll_offset(K_SCROLL) > 0.0, "the wheel scrolls the region")
 
     # --- a disabled control stays inert ----------------------------------
     app.clicks = 0

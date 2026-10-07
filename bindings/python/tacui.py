@@ -130,6 +130,7 @@ CLICK_FN = CFUNCTYPE(None, c_void_p)
 BOOL_FN = CFUNCTYPE(None, c_void_p, c_int32)
 FLOAT_FN = CFUNCTYPE(None, c_void_p, c_float)
 INDEX_FN = CFUNCTYPE(None, c_void_p, c_int32)
+TEXT_FN = CFUNCTYPE(None, c_void_p, c_char_p)
 
 
 class Host(Structure):
@@ -231,6 +232,33 @@ _lib.tui_panel.argtypes = [
     c_void_p, c_uint64, c_float, c_float, c_float, c_float,
     c_uint32, c_float, c_int32,
 ]
+
+_lib.tui_text_input.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    c_char_p, c_char_p, c_float, c_int32, c_int32, TEXT_FN, c_void_p,
+]
+_lib.tui_text_get.restype = c_int32
+_lib.tui_text_get.argtypes = [c_void_p, c_uint64, c_char_p, c_int32]
+_lib.tui_text_set.argtypes = [c_void_p, c_uint64, c_char_p]
+
+_lib.tui_scroll_view.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float, c_float, c_float,
+]
+_lib.tui_scroll_offset.restype = c_float
+_lib.tui_scroll_offset.argtypes = [c_void_p, c_uint64]
+_lib.tui_scroll_set_offset.argtypes = [c_void_p, c_uint64, c_float]
+_lib.tui_scroll_bar.argtypes = [
+    c_void_p, c_uint64, c_uint64, c_float, c_float, c_float, c_float,
+    c_float, c_float, c_float,
+]
+
+_lib.tui_list_view.argtypes = [
+    c_void_p, c_uint64, c_float, c_float, c_float, c_float,
+    POINTER(c_char_p), POINTER(c_char_p), c_int32, c_int32,
+    c_float, c_float, c_int32, c_uint64, INDEX_FN, c_void_p,
+]
+_lib.tui_list_offset.restype = c_float
+_lib.tui_list_offset.argtypes = [c_void_p, c_uint64]
 
 _lib.tui_dispatch_event.argtypes = [
     c_void_p, c_int32, c_float, c_float, c_uint32, c_uint32, c_float, c_int32,
@@ -546,7 +574,115 @@ class Ui:
         x, y, w, h = box
         _lib.tui_panel(self._ui, key, x, y, w, h, fill, radius,
                        1 if border else 0)
-        return _PanelCtx(self)
+        return _ContainerCtx(self)
+
+    # -- stateful controls (L1) -------------------------------------------
+    #
+    # textInput / scrollView / listView keep cross-frame state (an edit buffer,
+    # a scroll offset). The library owns it, keyed by the control's key, so the
+    # host reads it back rather than passing a buffer in.
+
+    def _text(self, fn) -> "TEXT_FN":
+        if fn is None:
+            return TEXT_FN()
+        cb = TEXT_FN(lambda _user, s: fn(s.decode("utf-8") if s else ""))
+        self._callbacks.append(cb)
+        return cb
+
+    def text_input(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        *,
+        placeholder: str = "",
+        suffix: str = "",
+        size: float = 0.0,
+        enabled: bool = True,
+        max_length: int = 0,
+        on_change=None,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_text_input(
+            self._ui, key, x, y, w, h,
+            placeholder.encode("utf-8"), suffix.encode("utf-8"),
+            size, 1 if enabled else 0, max_length, self._text(on_change), None,
+        )
+
+    def text_get(self, key: int) -> str:
+        """The field's current text. The library owns the buffer."""
+        n = _lib.tui_text_get(self._ui, key, None, 0)
+        buf = ctypes.create_string_buffer(n + 1)
+        _lib.tui_text_get(self._ui, key, buf, n + 1)
+        return buf.value.decode("utf-8")
+
+    def text_set(self, key: int, value: str) -> None:
+        _lib.tui_text_set(self._ui, key, value.encode("utf-8"))
+
+    def scroll_view(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        *,
+        content_height: float,
+        line_step: float = 48.0,
+    ) -> "_ContainerCtx":
+        """Opens a scrollable region. `with ui.scroll_view(...): ...` nests the
+        content; read `scroll_offset(key)` to place it."""
+        x, y, w, h = box
+        _lib.tui_scroll_view(self._ui, key, x, y, w, h, content_height, line_step)
+        return _ContainerCtx(self)
+
+    def scroll_offset(self, key: int) -> float:
+        return _lib.tui_scroll_offset(self._ui, key)
+
+    def scroll_set_offset(self, key: int, offset: float) -> None:
+        _lib.tui_scroll_set_offset(self._ui, key, offset)
+
+    def scroll_bar(
+        self,
+        bar_key: int,
+        scroll_key: int,
+        box: tuple[float, float, float, float],
+        *,
+        content_height: float,
+        width: float = 8.0,
+        min_thumb: float = 28.0,
+    ) -> None:
+        x, y, w, h = box
+        _lib.tui_scroll_bar(self._ui, bar_key, scroll_key, x, y, w, h,
+                            content_height, width, min_thumb)
+
+    def list_view(
+        self,
+        key: int,
+        box: tuple[float, float, float, float],
+        labels: list[str],
+        *,
+        secondary: list[str] | None = None,
+        selected: int = -1,
+        row_height: float = 30.0,
+        row_gap: float = 2.0,
+        show_bar: bool = True,
+        row_key_base: int = 0,
+        on_select=None,
+    ) -> None:
+        x, y, w, h = box
+        enc_labels = [s.encode("utf-8") for s in labels]
+        arr_labels = (c_char_p * len(enc_labels))(*enc_labels)
+        if secondary is None:
+            arr_secondary = None
+        else:
+            enc_secondary = [s.encode("utf-8") for s in secondary]
+            arr_secondary = (c_char_p * len(enc_secondary))(*enc_secondary)
+
+        _lib.tui_list_view(
+            self._ui, key, x, y, w, h, arr_labels, arr_secondary,
+            len(enc_labels), selected, row_height, row_gap,
+            1 if show_bar else 0, row_key_base, self._index(on_select), None,
+        )
+
+    def list_offset(self, key: int) -> float:
+        return _lib.tui_list_offset(self._ui, key)
 
     # -- input injection --------------------------------------------------
 
@@ -708,14 +844,14 @@ class _StackCtx:
         _lib.tui_pop(self._ui._ui)
 
 
-class _PanelCtx:
-    """`with ui.panel(...): ...` — tui_panel opens a container, tui_pop closes
-    it, so a panel nests its children without a manual push/pop pair."""
+class _ContainerCtx:
+    """`with ui.panel(...): ...` / `with ui.scroll_view(...): ...` — those open a
+    container and tui_pop closes it, so nesting needs no manual push/pop pair."""
 
     def __init__(self, ui: Ui) -> None:
         self._ui = ui
 
-    def __enter__(self) -> "_PanelCtx":
+    def __enter__(self) -> "_ContainerCtx":
         return self
 
     def __exit__(self, *_exc) -> None:
