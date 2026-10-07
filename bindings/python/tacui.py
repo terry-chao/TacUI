@@ -288,6 +288,7 @@ _lib.tui_dispatch_event.argtypes = [
 ]
 _lib.tui_update.restype = c_int32
 _lib.tui_update.argtypes = [c_void_p]
+_lib.tui_set_ui_scale.argtypes = [c_void_p, c_float]
 
 _lib.tui_state_get.restype = c_int64
 _lib.tui_state_get.argtypes = [c_void_p, c_uint32, c_int64]
@@ -737,6 +738,11 @@ class Ui:
     def update(self) -> bool:
         """Rebuild + reconcile if the tree is dirty. True when it rebuilt."""
         return _lib.tui_update(self._ui) != 0
+
+    def set_ui_scale(self, scale: float) -> None:
+        """Override the DPI-derived UI scale (0 = follow the monitor; 1.0 makes
+        captures DPI-independent). Call before run()."""
+        _lib.tui_set_ui_scale(self._ui, scale)
 
     # -- state ------------------------------------------------------------
 

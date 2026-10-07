@@ -291,6 +291,11 @@ TUI_API void tui_dispatch_event(tui_ui* ui, int32_t type, float x, float y,
 // owns its own loop — or a headless test — calls it directly.
 TUI_API int32_t tui_update(tui_ui* ui);
 
+// Overrides the DPI-derived UI scale. 0 (the default) follows the window's
+// monitor; 1.0 renders DPI-independently, which a golden-image capture wants so
+// the same build produces the same pixels on any display. Call before tui_run.
+TUI_API void tui_set_ui_scale(tui_ui* ui, float scale);
+
 // Key codes accepted by tui_dispatch_event for TUI_EVENT_KEY_DOWN. Printable
 // input goes through TUI_EVENT_CHAR instead. Mirrors ui::KeyCode.
 enum {

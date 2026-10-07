@@ -101,6 +101,7 @@ struct tui_ui {
     bool        exitRequested    = false;
     bool        captureRequested = false;
     std::string capturePathUtf8;
+    float       uiScale          = 0.0f;   // 0 = follow the monitor DPI
 
     tui_handle allocHandle(bool isLease);
     HandleEntry* lookup(tui_handle h);
@@ -573,6 +574,10 @@ int32_t tui_update(tui_ui* ui) {
     return ui->ui.update() ? 1 : 0;
 }
 
+void tui_set_ui_scale(tui_ui* ui, float scale) {
+    if (ui) ui->uiScale = scale > 0.0f ? scale : 0.0f;
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -778,6 +783,7 @@ int32_t tui_run(tui_ui* ui, const char* title_utf8, uint32_t width, uint32_t hei
     opts.width  = width;
     opts.height = height;
     opts.clear  = Color::rgba8(24, 26, 32);
+    opts.uiScale = ui->uiScale;
 
     // The C ABI's hooks map onto the host's: the host owns the window, the
     // device and the loop, and re-checks our flags right after the callback
