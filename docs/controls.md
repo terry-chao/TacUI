@@ -6,7 +6,8 @@
 > 已落地：控件各自成一个容器，在相对容器里按尺寸提示 / `flex` / 间距被摆放，
 > 不必再手算每个控件的位置。绝对盒写法保持不变。见 [布局](layout.md)。
 > 这些控件同时经 C ABI 导出（`tui_label` / `tui_button` / …），所以宿主语言
-> 用的是**同一套**控件，见 [C ABI 与 Python 绑定](python.md)。
+> 用的是**同一套**控件；`TextInput` / `ScrollView` / `ListView` 的跨帧状态由库按 key
+> 托管，宿主经访问器读写。见 [C ABI 与 Python 绑定](python.md)。
 
 ![控件总览](img/controls.png)
 

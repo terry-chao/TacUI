@@ -107,5 +107,5 @@ device->endFrame();
   （见 [C ABI 与 Python 绑定](python.md)）；
 * **输入注入与 `tui_update` 已导出**：`tui_dispatch_event` 把事件走
   `ui.dispatchEvent` 同一条路径送进框架，宿主可以自己驱动帧循环或做 headless 测试；
-* 还没导出：`textInput` / `scrollView` / `listView` —— 它们需要宿主持有缓冲或滚动状态，
-  状态迁移是下一步。
+* **有状态控件也已导出**：`tui_text_input` / `tui_scroll_view` / `tui_list_view`，
+  它们的跨帧状态由库按 key 托管，宿主用 `tui_text_get/set`、`tui_scroll_offset` 等访问器读写。

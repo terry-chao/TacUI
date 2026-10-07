@@ -98,8 +98,24 @@ with ui.stack():
 回调通过 ABI 的 `user` 指针 + 宿主侧闭包路由回 Python 对象 —— C ABI 从不持有语言的闭包。
 
 已导出：`label` `button` `checkbox` `radio` `toggle` `slider` `progress` `divider`
-`tabs` `panel`。**待导出**：`textInput`（需要宿主持有缓冲）与 `scrollView` /
-`listView`（需要滚动几何），它们依赖下面这两个刚补上的能力，但状态迁移还没做。
+`tabs` `panel`。有状态的 L1 也导出了 —— `textInput` / `scrollView` /
+`listView` 的跨帧状态（编辑缓冲、滚动偏移）由**库按 key 托管**，宿主通过访问器
+读写，而不是传缓冲区进来（控件的编辑回调按引用捕获这份状态，缓冲区方案会悬空）：
+
+```python
+ui.text_input(K_SEARCH, (20, 340, 240, 32), placeholder="search",
+              on_change=app.set_query)
+app.query = ui.text_get(K_SEARCH)        # 读回库托管的文本
+ui.text_set(K_SEARCH, "")                # 或由宿主写入
+
+with ui.scroll_view(K_SCROLL, box, content_height=content_h):   # 打开裁剪容器
+    off = ui.scroll_offset(K_SCROLL)     # 读回偏移，用它摆放内容
+    ...                                  # 发射内容
+ui.scroll_bar(K_SCROLLBAR, K_SCROLL, box, content_height=content_h)
+
+ui.list_view(K_LIST, box, labels, selected=app.row,
+             row_key_base=K_ROW, on_select=app.set_row)   # 虚拟化 + 滚轮
+```
 
 ---
 
@@ -132,6 +148,10 @@ python bindings\python\controls_test.py
 [PASS] clicking the checkbox flips the host value
 [PASS] dragging the slider to the right reaches the end
 [PASS] clicking a tab segment reports its index
+[PASS] typing reaches the field's buffer
+[PASS] clicking a list row reports its index
+[PASS] the wheel scrolls the list
+[PASS] the wheel scrolls the region
 [PASS] a disabled button does not fire
 ```
 

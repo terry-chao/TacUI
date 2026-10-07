@@ -292,7 +292,7 @@ M0 **不是** "Hello World 按钮"。M0 的任务是**验证架构里最冒险�
 **从 Python 宿主得到的 ABI 反馈：**
 - 代际句柄（`{index, generation}`，8 字节）在 ctypes 下工作良好，`__bool__` 语义自然
 - `user` 指针 + 宿主侧注册表是可行模式（比闭包更贴合 ABI 意图）
-- **控件层与输入注入已导出**：`tui_label` / `tui_button` / … / `tui_panel` 让宿主语言用**同一套**控件；`tui_dispatch_event` + `tui_update` 让宿主自己驱动事件与重建，从而能无窗口验证（`bindings/python/controls_test.py`）
+- **控件层与输入注入已导出**：`tui_label` / `tui_button` / … / `tui_panel` 让宿主语言用**同一套**控件；`textInput` / `scrollView` / `listView` 的跨帧状态由库按 key 托管（访问器读写）；`tui_dispatch_event` + `tui_update` 让宿主自己驱动事件与重建，从而能无窗口验证（`bindings/python/controls_test.py`）
 - **构建面确实 chatty**：每节点 3~4 次 FFI。可接受，但大树的批量提交（§5.2）迟早要做
 - **ctypes 回调里抛异常不会传播进 C 循环** —— 宿主的错误会静默丢失。ABI 需要一条回传错误的路径（M1）
 
