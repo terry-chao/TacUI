@@ -9,19 +9,26 @@
 namespace tac::text {
 
 // Cache key. Size is bucketed to whole pixels: keeping a distinct entry per
-// fractional size would explode the cache for no visible gain.
+// fractional size would explode the cache for no visible gain. `face` is the
+// fallback-chain face the glyph came from — glyph indices are only unique
+// within a face, so two fonts' index 42 must not collide.
 struct GlyphKey {
     uint16_t glyphIndex = 0;
     uint16_t sizeBucket = 0;
+    uint16_t face       = 0;
 
     bool operator==(const GlyphKey& o) const {
-        return glyphIndex == o.glyphIndex && sizeBucket == o.sizeBucket;
+        return glyphIndex == o.glyphIndex && sizeBucket == o.sizeBucket &&
+               face == o.face;
     }
 };
 
 struct GlyphKeyHash {
     size_t operator()(const GlyphKey& k) const {
-        return (static_cast<size_t>(k.glyphIndex) << 16) ^ k.sizeBucket;
+        size_t h = static_cast<size_t>(k.glyphIndex) * 2654435761u;
+        h ^= static_cast<size_t>(k.sizeBucket) * 40503u;
+        h ^= static_cast<size_t>(k.face) * 2246822519u;
+        return h;
     }
 };
 

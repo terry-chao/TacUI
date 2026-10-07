@@ -78,7 +78,7 @@ const GlyphSlot* GlyphAtlas::get(const GlyphKey& key, const TextSystem& text, fl
     ++stats_.misses;
 
     GlyphBitmap bmp;
-    if (!text.rasterize(key.glyphIndex, sizePx, bmp)) {
+    if (!text.rasterize(key.face, key.glyphIndex, sizePx, bmp)) {
         return nullptr;
     }
 

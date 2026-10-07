@@ -183,7 +183,7 @@ void rebuildText(RenderObject& ro, ReconcileCtx& ctx, ReconcileStats& stats) {
     ro.placed.reserve(ro.shaped.glyphs.size());
     for (const text::Glyph& g : ro.shaped.glyphs) {
         const text::GlyphSlot* slot =
-            ctx.atlas->get(text::GlyphKey{ g.index, bucket }, *ctx.textSystem, pxSize);
+            ctx.atlas->get(text::GlyphKey{ g.index, bucket, g.face }, *ctx.textSystem, pxSize);
         if (!slot) continue;   // atlas full; the glyph is dropped, not faked
         if (slot->width <= 0.0f || slot->height <= 0.0f) continue;   // blank glyph
 

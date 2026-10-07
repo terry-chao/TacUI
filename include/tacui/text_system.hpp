@@ -1,16 +1,21 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 struct IDWriteFactory;
 struct IDWriteFontFace;
+struct IDWriteFont;
+struct IDWriteFontCollection;
+struct IDWriteFontFallback;
 
 namespace tac::text {
 
 // One positioned glyph within a shaped line.
 struct Glyph {
     uint16_t index   = 0;
+    uint16_t face    = 0;      // which face in the fallback chain produced it
     float    x       = 0.0f;   // pen position along the line
     float    advance = 0.0f;
 };
@@ -36,8 +41,11 @@ struct GlyphBitmap {
 // HarfBuzz for shaping and ICU for bidi/line-breaking (architecture.md §3.4);
 // those are swappable behind this interface and land in M1.
 //
-// M0 limitations, deliberate:
-//   * one font face, no fallback chain
+// Fallback: a character the primary family does not cover (CJK, symbols, …) is
+// resolved through DirectWrite's system font fallback, so each glyph carries
+// the face it came from. Without that, Chinese came out as tofu boxes.
+//
+// Still deliberate limitations:
 //   * codepoint -> glyph is 1:1, so no ligatures or complex-script shaping
 //   * single line: no wrapping, no bidi
 class TextSystem {
@@ -52,7 +60,9 @@ public:
 
     // Rasterises one glyph at `sizePx` into an 8-bit coverage bitmap,
     // cropped to the ink bounds and positioned relative to the baseline.
-    bool rasterize(uint16_t glyphIndex, float sizePx, GlyphBitmap& out) const;
+    // `face` is the id carried by the Glyph (0 = primary).
+    bool rasterize(uint16_t face, uint16_t glyphIndex, float sizePx,
+                   GlyphBitmap& out) const;
 
     float ascent(float sizePx) const;
     float descent(float sizePx) const;
@@ -62,10 +72,32 @@ public:
     uint32_t faceId() const { return faceId_; }
 
 private:
+    // One resolved face in the fallback chain. Raw pointers: the public header
+    // must stay free of dwrite.h, so lifetime is managed by hand in shutdown().
+    struct FaceEntry {
+        IDWriteFontFace* face            = nullptr;
+        IDWriteFont*     font            = nullptr;   // owner, for identity/has-char
+        float            designUnitsPerEm = 2048.0f;
+        // Stable identity. IDWriteFont pointers handed back by MapCharacters are
+        // not stable across calls, so keying by pointer would mint a fresh face
+        // every rebuild and defeat the glyph cache.
+        std::wstring     key;
+    };
+
+    // Resolves (and caches) the face for a fallback font. Const because the
+    // face cache is filled lazily during shaping; `faces_` is mutable.
+    uint16_t faceIdForFont(IDWriteFont* font) const;
+    float    faceEm(uint16_t face) const;
+
     IDWriteFactory*  factory_ = nullptr;
     IDWriteFontFace* face_    = nullptr;
     uint32_t         faceId_  = 0;
     bool             comOwned_ = false;   // whether we own the thread's COM init
+
+    IDWriteFontCollection* collection_ = nullptr;
+    IDWriteFontFallback*   fallback_   = nullptr;
+    std::wstring           primaryFamily_;
+    mutable std::vector<FaceEntry> faces_;
 
     // Font design metrics, in design units.
     float designUnitsPerEm_ = 2048.0f;

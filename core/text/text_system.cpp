@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <dwrite.h>
+#include <dwrite_2.h>   // IDWriteFactory2 / IDWriteFontFallback (DWrite 1.1)
 #include <wrl/client.h>
 
 #include <cstdio>
@@ -55,6 +56,123 @@ std::vector<UINT32> utf16ToUtf32(const std::vector<wchar_t>& in) {
         out.push_back(unit);
     }
     return out;
+}
+
+// The minimum IDWriteTextAnalysisSource IDWriteFontFallback::MapCharacters
+// needs: hand it the text and a locale, nothing else.
+class RunAnalysisSource final : public IDWriteTextAnalysisSource {
+public:
+    RunAnalysisSource(const wchar_t* text, UINT32 length, const wchar_t* locale)
+        : text_(text), length_(length), locale_(locale) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (iid == __uuidof(IUnknown) || iid == __uuidof(IDWriteTextAnalysisSource)) {
+            *ppv = static_cast<IDWriteTextAnalysisSource*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&ref_); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG n = InterlockedDecrement(&ref_);
+        if (n == 0) delete this;
+        return n;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetTextAtPosition(UINT32 pos, const wchar_t** text,
+                                                UINT32* length) override {
+        if (pos >= length_) { *text = nullptr; *length = 0; return S_OK; }
+        *text   = text_ + pos;
+        *length = length_ - pos;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetTextBeforePosition(UINT32 pos, const wchar_t** text,
+                                                    UINT32* length) override {
+        if (pos == 0 || pos > length_) { *text = nullptr; *length = 0; return S_OK; }
+        *text   = text_ + pos - 1;
+        *length = 1;
+        return S_OK;
+    }
+    DWRITE_READING_DIRECTION STDMETHODCALLTYPE GetParagraphReadingDirection() override {
+        return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
+    }
+    HRESULT STDMETHODCALLTYPE GetLocaleName(UINT32, UINT32* length,
+                                            const wchar_t** locale) override {
+        *locale = locale_;
+        *length = static_cast<UINT32>(std::wcslen(locale_));
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetNumberSubstitution(UINT32, UINT32* length,
+                                                    IDWriteNumberSubstitution** sub) override {
+        *sub    = nullptr;
+        *length = length_;
+        return S_OK;
+    }
+
+private:
+    ~RunAnalysisSource() = default;
+
+    LONG                ref_ = 1;
+    const wchar_t*      text_;
+    UINT32              length_;
+    const wchar_t*      locale_;
+};
+
+// A stable identity for a font in the collection. IDWriteFont objects handed
+// back by MapCharacters are not guaranteed to be the same pointer for the same
+// font, so identity has to come from the family name plus the face style.
+std::wstring fontKey(IDWriteFont* font) {
+    if (!font) return {};
+
+    std::wstring out;
+    IDWriteFontFamily* family = nullptr;
+    if (SUCCEEDED(font->GetFontFamily(&family)) && family) {
+        ComPtr<IDWriteLocalizedStrings> names;
+        if (SUCCEEDED(family->GetFamilyNames(&names)) && names->GetCount() > 0) {
+            UINT32 len = 0;
+            if (SUCCEEDED(names->GetStringLength(0, &len))) {
+                std::vector<wchar_t> buf(len + 1, L'\0');
+                if (SUCCEEDED(names->GetString(0, buf.data(), len + 1))) {
+                    out.assign(buf.data(), len);
+                }
+            }
+        }
+        family->Release();
+    }
+
+    out.push_back(L'|');
+    out += std::to_wstring(static_cast<int>(font->GetWeight()));
+    out.push_back(L'|');
+    out += std::to_wstring(static_cast<int>(font->GetStyle()));
+    out.push_back(L'|');
+    out += std::to_wstring(static_cast<int>(font->GetStretch()));
+    return out;
+}
+
+// Glyph indices + advances for one run of codepoints, using `face`. Advances
+// are pixels at `sizePx`, scaled by that face's own design units.
+void appendRunGlyphs(ShapedLine& out, IDWriteFontFace* face, float designUnits,
+                     float sizePx, const std::vector<UINT32>& codePoints,
+                     uint16_t faceId, float& pen) {
+    if (!face || codePoints.empty()) return;
+
+    const UINT32 n = static_cast<UINT32>(codePoints.size());
+    std::vector<UINT16> glyphs(n);
+    if (FAILED(face->GetGlyphIndices(codePoints.data(), n, glyphs.data()))) return;
+
+    std::vector<DWRITE_GLYPH_METRICS> metrics(n);
+    if (FAILED(face->GetDesignGlyphMetrics(glyphs.data(), n, metrics.data(), FALSE))) return;
+
+    const float scale = sizePx / (designUnits > 0.0f ? designUnits : 2048.0f);
+    for (UINT32 i = 0; i < n; ++i) {
+        const float advance = static_cast<float>(metrics[i].advanceWidth) * scale;
+        out.glyphs.push_back(Glyph{ glyphs[i], faceId, pen, advance });
+        pen += advance;
+    }
+    out.width = pen;
 }
 
 } // namespace
@@ -122,13 +240,56 @@ bool TextSystem::init(const char* familyUtf8) {
     lineGapUnits_     = static_cast<float>(fm.lineGap);
     faceId_           = 1;
 
+    // Keep the collection (fallback resolves against it) and the *resolved*
+    // family name — a caller-supplied family that does not exist was already
+    // remapped to index 0, so read the name back from the family.
+    ComPtr<IDWriteLocalizedStrings> names;
+    if (SUCCEEDED(fontFamily->GetFamilyNames(&names)) && names->GetCount() > 0) {
+        UINT32 nameLen = 0;
+        if (SUCCEEDED(names->GetStringLength(0, &nameLen))) {
+            std::vector<wchar_t> buf(nameLen + 1, L'\0');
+            if (SUCCEEDED(names->GetString(0, buf.data(), nameLen + 1))) {
+                primaryFamily_.assign(buf.data(), nameLen);
+            }
+        }
+    }
+
+    FaceEntry primaryFace;
+    primaryFace.face             = face_;
+    primaryFace.font             = font.Detach();
+    primaryFace.designUnitsPerEm = designUnitsPerEm_;
+    primaryFace.key              = fontKey(primaryFace.font);
+    faces_.push_back(primaryFace);
+
+    collection_ = collection.Detach();
+
+    // System font fallback needs DWrite 1.1 (IDWriteFactory2). If it is missing
+    // the text stack still works, just single-face as before.
+    ComPtr<IDWriteFactory2> factory2;
+    if (SUCCEEDED(factory_->QueryInterface(IID_PPV_ARGS(&factory2)))) {
+        IDWriteFontFallback* fb = nullptr;
+        if (SUCCEEDED(factory2->GetSystemFontFallback(&fb))) fallback_ = fb;
+    }
+
     return true;
 }
 
 void TextSystem::shutdown() {
-    if (face_) {
-        face_->Release();
-        face_ = nullptr;
+    for (FaceEntry& f : faces_) {
+        if (f.face) f.face->Release();
+        if (f.font) f.font->Release();
+    }
+    faces_.clear();
+    face_ = nullptr;   // owned by faces_[0]; just dropped
+    primaryFamily_.clear();
+
+    if (collection_) {
+        collection_->Release();
+        collection_ = nullptr;
+    }
+    if (fallback_) {
+        fallback_->Release();
+        fallback_ = nullptr;
     }
     if (factory_) {
         factory_->Release();
@@ -139,6 +300,38 @@ void TextSystem::shutdown() {
         comOwned_ = false;
     }
     faceId_ = 0;
+}
+
+uint16_t TextSystem::faceIdForFont(IDWriteFont* font) const {
+    if (!font) return 0;
+
+    const std::wstring key = fontKey(font);
+    for (size_t i = 0; i < faces_.size(); ++i) {
+        if (!faces_[i].key.empty() && faces_[i].key == key) {
+            return static_cast<uint16_t>(i);
+        }
+    }
+
+    IDWriteFontFace* face = nullptr;
+    if (FAILED(font->CreateFontFace(&face)) || !face) return 0;
+
+    DWRITE_FONT_METRICS fm{};
+    face->GetMetrics(&fm);
+
+    FaceEntry e;
+    e.face             = face;
+    e.font             = font;
+    e.designUnitsPerEm = fm.designUnitsPerEm ? static_cast<float>(fm.designUnitsPerEm)
+                                             : 2048.0f;
+    e.key              = key;
+    e.font->AddRef();   // the caller releases its fallback reference
+    faces_.push_back(e);
+    return static_cast<uint16_t>(faces_.size() - 1);
+}
+
+float TextSystem::faceEm(uint16_t face) const {
+    if (face < faces_.size()) return faces_[face].designUnitsPerEm;
+    return designUnitsPerEm_;
 }
 
 float TextSystem::ascent(float sizePx) const {
@@ -161,42 +354,78 @@ bool TextSystem::shape(const char* utf8, float sizePx, ShapedLine& out) const {
     const std::vector<wchar_t> wide = utf8ToWide(utf8);
     if (wide.empty()) return true;
 
-    const std::vector<UINT32> codePoints = utf16ToUtf32(wide);
-    const UINT32 count = static_cast<UINT32>(codePoints.size());
-
-    std::vector<UINT16> glyphs(count);
-    if (FAILED(face_->GetGlyphIndices(codePoints.data(), count, glyphs.data()))) {
-        std::fprintf(stderr, "[text] GetGlyphIndices failed\n");
-        return false;
-    }
-
-    std::vector<DWRITE_GLYPH_METRICS> metrics(count);
-    if (FAILED(face_->GetDesignGlyphMetrics(glyphs.data(), count, metrics.data(), FALSE))) {
-        std::fprintf(stderr, "[text] GetDesignGlyphMetrics failed\n");
-        return false;
-    }
-
-    const float scale = sizePx / designUnitsPerEm_;
-    out.glyphs.reserve(count);
-
     float pen = 0.0f;
-    for (UINT32 i = 0; i < count; ++i) {
-        const float advance = static_cast<float>(metrics[i].advanceWidth) * scale;
-        out.glyphs.push_back(Glyph{ glyphs[i], pen, advance });
-        pen += advance;
+
+    // No fallback object (DWrite < 1.1): everything goes through the primary
+    // face, which is the pre-fallback behaviour.
+    if (!fallback_ || !collection_ || primaryFamily_.empty()) {
+        appendRunGlyphs(out, face_, designUnitsPerEm_, sizePx, utf16ToUtf32(wide),
+                        0, pen);
+        return true;
     }
-    out.width = pen;
+
+    static const wchar_t* kLocale = []() -> const wchar_t* {
+        static wchar_t buf[LOCALE_NAME_MAX_LENGTH] = L"en-US";
+        GetUserDefaultLocaleName(buf, LOCALE_NAME_MAX_LENGTH);
+        return buf;
+    }();
+
+    const UINT32 length = static_cast<UINT32>(wide.size());
+    RunAnalysisSource* source = new RunAnalysisSource(wide.data(), length, kLocale);
+
+    // Walk the string in the runs the system fallback resolves. A run the base
+    // family covers comes back as the base font; CJK and symbols come back as a
+    // fallback family — that is what stops Chinese from rendering as tofu.
+    UINT32 pos = 0;
+    while (pos < length) {
+        IDWriteFont* mapped       = nullptr;
+        UINT32       mappedLength = 0;
+        FLOAT        fontScale    = 1.0f;
+
+        const HRESULT hr =
+            fallback_->MapCharacters(source, pos, length - pos, collection_,
+                                     primaryFamily_.c_str(),
+                                     DWRITE_FONT_WEIGHT_NORMAL,
+                                     DWRITE_FONT_STYLE_NORMAL,
+                                     DWRITE_FONT_STRETCH_NORMAL,
+                                     &mappedLength, &mapped, &fontScale);
+        if (FAILED(hr) || mappedLength == 0) break;   // no progress -> stop
+
+        const std::vector<wchar_t> slice(wide.begin() + pos,
+                                         wide.begin() + pos + mappedLength);
+
+        uint16_t faceId = 0;
+        float    em     = designUnitsPerEm_;
+        if (mapped) {
+            faceId = faceIdForFont(mapped);
+            em     = faceEm(faceId);
+            mapped->Release();
+        }
+
+        const float px = sizePx * (fontScale > 0.0f ? fontScale : 1.0f);
+        IDWriteFontFace* runFace =
+            (faceId < faces_.size()) ? faces_[faceId].face : face_;
+
+        appendRunGlyphs(out, runFace, em, px, utf16ToUtf32(slice), faceId, pen);
+        pos += mappedLength;
+    }
+
+    source->Release();
     return true;
 }
 
-bool TextSystem::rasterize(uint16_t glyphIndex, float sizePx, GlyphBitmap& out) const {
+bool TextSystem::rasterize(uint16_t face, uint16_t glyphIndex, float sizePx,
+                           GlyphBitmap& out) const {
     out.alpha.clear();
     out.width = out.height = 0;
     out.bearingX = out.bearingY = 0;
-    if (!face_) return false;
+
+    IDWriteFontFace* fontFace =
+        (face < faces_.size()) ? faces_[face].face : face_;
+    if (!fontFace) return false;
 
     DWRITE_GLYPH_RUN run{};
-    run.fontFace     = face_;
+    run.fontFace     = fontFace;
     run.fontEmSize   = sizePx;
     run.glyphCount   = 1;
     run.bidiLevel    = 0;
