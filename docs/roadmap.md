@@ -17,6 +17,11 @@
 | **M5 硬骨头** | 文本编辑器、IME、多窗口 / 弹窗、无障碍 | —— |
 | **M6 多语言铺开** | C# / TS / Swift / Kotlin | 全部通过 parity test |
 
+**进度：** M0 已完成；M2 的输入系统、主题令牌、12 个 L2 控件、`ScrollView` /
+`ListView` 与**相对布局（row / column）**已落地（见 [布局](layout.md)）。
+M2 仍缺通用约束布局与动画系统，M1 的统一 draw list、解析 AA 贝塞尔与
+HarfBuzz / ICU 也尚未做。
+
 ---
 
 ## M0 的六条验收标准

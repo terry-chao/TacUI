@@ -83,7 +83,10 @@ b.behavior(key, ui::NodeBehavior{
 
 **已实现：裁剪。** `Builder::clip()` 打开一个裁剪容器，**绘制与命中测试共用同一个矩形**；`rhi::ClipRect` 随图元带到着色器里做 scissor。ScrollView / ListView 建立在这一层之上。
 
-**尚未实现：布局。** 控件仍由调用方给绝对盒 —— M2 的 Measure / Arrange。
+**已实现：相对布局（帧式）。** `Builder::row` / `Builder::column` 把自身盒当作框架，
+按尺寸提示 / `flex` / `gap` / `margin` / 对齐摆放子节点；绝对子树整体平移，
+所以既有的绝对盒写法不受影响。控件各自收进一个容器，在相对容器里只占一个槽。
+细节与已知限制见 [布局](layout.md)。
 
 ---
 
@@ -247,7 +250,8 @@ struct Theme {
 | **4** | **把例子改成用组件** | 🟡 新增 `controls_gallery` 作验收；`asset_browser` 仍是手写 | 例子是验收标准 |
 | **5** | **TextInput** | 🟡 编辑 / 选区 / 光标已通；缓冲仍在宿主侧，未搬进 Element | 第一个真图元，验证「core 侧状态」这条路 |
 | **6** | **ScrollView + ListView（L1）** | ✅ 已做：裁剪 + 滚轮冒泡 + 虚拟化 | 虚拟化，游戏工具链的刚需 |
-| 7 | 其余 L2 铺开 | ⬜ | 到这一步就是体力活了 |
+| **7** | **相对布局**（row / column 帧式 Measure/Arrange） | ✅ 已做：尺寸提示 / `flex` / `gap` / `margin` / 对齐 + 绝对子树平移 | 控件此前都靠调用方给绝对盒；见 [布局](layout.md) |
+| 8 | 其余 L2 铺开 | ⬜ | 到这一步就是体力活了 |
 
 ### 第 1 步做完了，实际结果是：
 

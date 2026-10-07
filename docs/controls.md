@@ -2,8 +2,9 @@
 
 > 状态：**控件层已成型。** 12 个 L2 复合控件 + 主题令牌，加上裁剪、
 > 事件冒泡、滚轮与虚拟化支撑起来的 `ScrollView` / `ListView`。
-> `TextInput` 以「宿主持有缓冲」的形态先跑通输入与编辑；布局（Measure / Arrange）
-> 仍是 M2 的事，控件目前由调用方给绝对盒。
+> `TextInput` 以「宿主持有缓冲」的形态先跑通输入与编辑。相对布局（row / column）
+> 已落地：控件各自成一个容器，在相对容器里按尺寸提示 / `flex` / 间距被摆放，
+> 不必再手算每个控件的位置。绝对盒写法保持不变。见 [布局](layout.md)。
 
 ![控件总览](img/controls.png)
 
@@ -183,7 +184,8 @@ ui.setTheme(ui::lightTheme());
 |---|---|---|
 | ~~1~~ | ~~事件冒泡~~ | ✅ 已做 |
 | ~~2~~ | ~~裁剪~~ | ✅ 已做 |
-| **1** | **布局**（Measure / Arrange + BoxConstraints） | 控件现在靠调用方给绝对盒；`ListView` 的行高、`ScrollView` 的内容高度现在都要人来算 |
+| ~~1~~ | ~~相对布局（row / column + `BoxConstraints`）~~ | ✅ 已做：尺寸提示 / `flex` / 间距 / 对齐 + 绝对子树平移；见 [布局](layout.md) |
+| **1** | 通用约束传播（两遍 Measure/Arrange、自动换行、滚动容器接入） | 目前是帧式布局，容器必须有明确盒；自动换行、按内容撑开窗口还没有 |
 | 2 | `Popup` / `Menu` / `Tooltip` | 需要独立图层与焦点捕获，是目前唯一还缺的 L1 |
 | 3 | 其余 L2 ：`Badge` `Toolbar` `Spinner` `Breadcrumb` | 体力活 |
 | 4 | TextInput 升级为 L1：光标 / 选区搬到 Element，加 IME | 工程量大的一块 |

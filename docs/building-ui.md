@@ -98,5 +98,6 @@ core 是可嵌入的：`host/` 只是便利路径，不是必需层。
 ## 接着读
 
 - [两条变更通道](two-paths.md) —— override、token 与生效值规则
+- [布局](layout.md) —— row / column、尺寸提示与绝对子树平移
 - [组件设计](components.md) —— 在写控件之前的输入系统与主题令牌
 - [C ABI 与 Python 绑定](python.md) —— 同一个 UI 换个宿主语言

@@ -287,7 +287,7 @@ M0 **不是** "Hello World 按钮"。M0 的任务是**验证架构里最冒险�
 8. **`liveOverrides` 只在 `update()` 里赋值**，而树不脏时 `update()` 直接 early-return，所以这个值会停在第一次构建时的状态。改为在 `paint()` 里统计（它本来就在遍历树）。
 9. **文字发糊**：字形的 pen advance 是小数（排印正确），但按小数位置画位图会被线性采样器重采样。修法是**吸附字形原点到整像素、保留小数 advance**。间距不受影响（同一基线上的字形相对偏移恒为整数），字形变清晰。
 
-**M0 之后的工作**见 [components.md](components.md)：输入系统已完成（命中测试 / hover / press / 焦点 / Tab），组件库待做。
+**M0 之后的工作**见 [components.md](components.md)：输入系统（命中测试 / hover / press / 焦点 / Tab）、主题令牌、12 个 L2 控件、`ScrollView` / `ListView` 与相对布局（row / column）已完成（见 [布局](layout.md)）；其余 L2、通用约束传播、`Popup`、IME 待做。
 
 **从 Python 宿主得到的 ABI 反馈：**
 - 代际句柄（`{index, generation}`，8 字节）在 ctypes 下工作良好，`__bool__` 语义自然

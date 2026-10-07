@@ -55,6 +55,7 @@ nav:
   - 指南:
       - 构建与运行: getting-started.md
       - 写一个 UI: building-ui.md
+      - 布局: layout.md
       - 两条变更通道: two-paths.md
       - 控件库: controls.md
       - 嵌入与对接: integration.md

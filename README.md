@@ -14,8 +14,9 @@ Brand assets live in [`brand/`](brand/README.md) — the mark, lockups, app icon
 **M0 (architecture validation) is complete.** A GPU-rendered, retained-mode UI
 with a C++ core and a C ABI that a non-C++ language can drive. See
 [docs/plan.md](docs/plan.md) §6.1 for exactly what that does and does not
-include — the control library, layout engine and text stack are all still
-minimal.
+include. Relative layout has since landed — `row` / `column` arrange their
+children from a frame, so controls stop needing a hand-computed box
+([docs/layout.md](docs/layout.md)). The text stack is still minimal.
 
 ## Build
 
@@ -94,6 +95,13 @@ thousand costs the same as a list of ten).
 Each control is a **function**, not a class, and none of them tracks its own
 hover/press/focus state — the input system owns that, so the region that lights
 up is by construction the region that responds.
+
+Layout is relative: `b.row(box, ...)` and `b.column(box, ...)` arrange their
+children inside a frame, so a control lands where the container puts it instead
+of at a hand-computed x/y. Sizing hints, `flex`, `gap`, `margin` and alignment
+do the rest; each control wraps itself in one container, so it occupies exactly
+one slot. Absolute boxes still work exactly as before. See
+[docs/layout.md](docs/layout.md).
 
 ```cpp
 ui::button(b, kSave, { 20, 20, 96, 30 },
