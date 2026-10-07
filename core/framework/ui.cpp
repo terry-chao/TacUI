@@ -1,6 +1,7 @@
 #include "tacui/ui.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -14,12 +15,6 @@ uint32_t countOverrides(const Element& e) {
         n += countOverrides(*c);
     }
     return n;
-}
-
-Color applyOpacity(Color c, const RenderObject& ro) {
-    if (!ro.overrideActive) return c;
-    c.a *= ro.overrideOpacity;
-    return c;
 }
 
 Rect intersectRect(const Rect& a, const Rect& b) {
@@ -66,12 +61,19 @@ void collect(const Element& e,
             r.clip         = scissor;
             rects.push_back(r);
         } else if (e.type == VType::Text) {
-            const Vec2 t     = ro.overrideActive ? ro.overrideTranslate : Vec2{};
-            const Color tint = applyOpacity(ro.baseColor, ro);
+            // The glyph cache holds node-local positions; the node origin is
+            // applied here. Snap the *final* origin to whole pixels — drawing a
+            // bitmap glyph at a fractional origin makes the linear sampler
+            // resample it, which is what turns UI text to mush. The pen advance
+            // inside the run stays fractional, so spacing is unaffected.
+            const Rect  ob   = effectiveBounds(ro);
+            const Color tint = effectiveColor(ro);
 
             for (const PlacedGlyph& g : ro.placed) {
                 rhi::GlyphQuad q{};
-                q.bounds = Rect{ g.bounds.x + t.x, g.bounds.y + t.y, g.bounds.w, g.bounds.h };
+                q.bounds = Rect{ std::round(ob.x + g.bounds.x),
+                                 std::round(ob.y + g.bounds.y),
+                                 g.bounds.w, g.bounds.h };
                 q.u0 = g.u0;
                 q.v0 = g.v0;
                 q.u1 = g.u1;
@@ -166,6 +168,11 @@ bool Ui::update() {
 
     ReconcileStats rs;
     reconcile(*root_, *v, rs, ctx);
+
+    // Layout runs after reconcile because it needs shaped text to know an
+    // intrinsic size, and reconcile is what shapes. Absolute subtrees are left
+    // untouched, so a tree with no relative container is unchanged.
+    layoutTree(*root_, ctx);
 
     // Focus survives rebuilds while the node does; clear it only if the node
     // was removed.

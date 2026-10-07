@@ -18,8 +18,12 @@ struct Element;
 // on the RenderObject so paint stays a pure emit — shaping and atlas lookups
 // happen at reconcile time, which is once per change rather than once per
 // frame (architecture.md §3.4).
+//
+// `bounds` is *node-local*: (0,0) is the node's own top-left, independent of
+// where layout finally places it. Paint adds the effective origin. Storing it
+// local is what lets the layout pass move a text node without re-shaping it.
 struct PlacedGlyph {
-    Rect  bounds;      // pixel space, top-left origin
+    Rect  bounds;      // node-local pixel space, top-left origin
     float u0 = 0.0f, v0 = 0.0f;
     float u1 = 0.0f, v1 = 0.0f;
 };
@@ -31,8 +35,8 @@ struct PlacedGlyph {
 // Effective value = override while a token is alive, otherwise base.
 // That single rule is the entire priority system (architecture.md §14.3).
 struct RenderObject {
-    // Layout result. M0 takes it straight from the VNode; M2 adds
-    // Measure/Arrange with BoxConstraints.
+    // Layout result. In an absolute context this is taken straight from the
+    // VNode; inside a relative container the layout pass overwrites it.
     Rect  bounds;
     float cornerRadius = 0.0f;
     Color baseColor;
@@ -82,6 +86,24 @@ struct Element {
     // responds in.
     bool clipsChildren = false;
     Rect clipBounds;
+
+    // ---- layout (mirrored from the VNode, retained across rebuilds) -------
+    //
+    // The VNode is discarded after reconcile, so anything layout needs has to
+    // live here. `frameBox` is the node's authored box (for a relative
+    // container, the frame it distributes); the sizing hints apply when this
+    // node is a child of a relative container.
+    StackLayout layout = StackLayout::Absolute;
+    float       gap    = 0.0f;
+    EdgeInsets  padding;
+    Rect        frameBox;
+
+    float      widthHint  = kAuto;
+    float      heightHint = kAuto;
+    float      flex       = 0.0f;
+    EdgeInsets margin;
+    float      alignX = 0.0f;
+    float      alignY = 0.0f;
 };
 
 // ---------------------------------------------------------------------------
@@ -175,6 +197,13 @@ struct ReconcileCtx {
 // Diffs `v` into `e`. M0 matches children positionally; key-based matching and
 // list reordering land in M2 (plan.md §6).
 void reconcile(Element& e, const VNode& v, ReconcileStats& stats, ReconcileCtx& ctx);
+
+// Runs the layout pass. Absolute subtrees are left exactly as they were; a
+// relative container (row / column) arranges its children inside its frame,
+// and an absolute subtree placed by a relative parent is translated as a whole.
+// Called from Ui::update() after reconcile, because it needs shaped text to
+// know a label's intrinsic size.
+void layoutTree(Element& root, ReconcileCtx& ctx);
 
 // Depth-first key lookup, used to hand out NodeRefs. M1 replaces this with an
 // id -> element map maintained during reconcile.

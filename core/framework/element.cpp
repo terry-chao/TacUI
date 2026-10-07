@@ -1,7 +1,9 @@
 #include "tacui/element.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace tac::ui {
 
@@ -134,6 +136,21 @@ Vec2 NodeRef::overrideTranslate() const {
 
 namespace {
 
+// Mirrors the layout half of a VNode onto the retained Element. The VNode is
+// thrown away after reconcile, so anything layout needs has to be copied here.
+void copyLayout(Element& e, const VNode& v) {
+    e.layout     = v.layout;
+    e.gap        = v.gap;
+    e.padding    = v.padding;
+    e.frameBox   = v.bounds;
+    e.widthHint  = v.width;
+    e.heightHint = v.height;
+    e.flex       = v.flex;
+    e.margin     = v.margin;
+    e.alignX     = v.alignX;
+    e.alignY     = v.alignY;
+}
+
 // Shapes `text` and resolves every glyph against the atlas, caching the result
 // on the RenderObject. Runs only when the string or its size actually changed.
 void rebuildText(RenderObject& ro, ReconcileCtx& ctx, ReconcileStats& stats) {
@@ -146,7 +163,10 @@ void rebuildText(RenderObject& ro, ReconcileCtx& ctx, ReconcileStats& stats) {
     }
     ++stats.textShaped;
 
-    const float baseline = ro.bounds.y + ctx.textSystem->ascent(ro.fontSize);
+    // Glyph positions are stored *node-local*: the baseline is measured from
+    // the node's own top, and paint adds the final origin. Layout can therefore
+    // relocate a text node without re-shaping it (see PlacedGlyph).
+    const float baseline = ctx.textSystem->ascent(ro.fontSize);
     const uint16_t bucket = static_cast<uint16_t>(ro.fontSize + 0.5f);
 
     const uint32_t rasterizedBefore = ctx.atlas->stats().rasterized;
@@ -158,20 +178,10 @@ void rebuildText(RenderObject& ro, ReconcileCtx& ctx, ReconcileStats& stats) {
         if (!slot) continue;   // atlas full; the glyph is dropped, not faked
         if (slot->width <= 0.0f || slot->height <= 0.0f) continue;   // blank glyph
 
-        // Snap the glyph origin to whole pixels.
-        //
-        // The pen advance stays fractional — that is typographically correct
-        // and keeps the spacing right — but drawing a bitmap glyph at a
-        // fractional origin makes the linear sampler resample it, which is
-        // exactly what turns UI text to mush. Snapping the origin while
-        // leaving the advance alone keeps both properties.
-        //
-        // (Subpixel positioning is the other valid choice, but it needs either
-        // a 3-channel atlas or distance-field text to look right. Not yet.)
         PlacedGlyph placed;
         placed.bounds = Rect{
-            std::round(ro.bounds.x + g.x + slot->bearingX),
-            std::round(baseline - slot->bearingY),   // bearingY is positive going up
+            g.x + slot->bearingX,
+            baseline - slot->bearingY,   // bearingY is positive going up
             slot->width,
             slot->height,
         };
@@ -215,6 +225,7 @@ ElementPtr mount(const VNode& v, ReconcileStats& stats, ReconcileCtx& ctx) {
     e->key  = v.key;
     e->clipsChildren = v.clipChildren;
     e->clipBounds    = v.clip;
+    copyLayout(*e, v);
     if (v.type == VType::Rect || v.type == VType::Text) {
         e->render = makeRenderObject(v, ctx, stats);
     }
@@ -262,6 +273,219 @@ void reconcileChildren(Element& e, const VNode& v, ReconcileStats& stats, Reconc
     }
 }
 
+// ---------------------------------------------------------------------------
+// Layout
+//
+// Frame-based, per plan.md D6. A relative container (row / column) is handed an
+// explicit box and splits it among its children; a child that is itself
+// absolute (a panel, a clip, a bare stack) is moved *as a whole* — its subtree
+// is translated rather than re-authored. Absolute subtrees outside any relative
+// container are never touched, so the M0 model is unchanged where it was used.
+// ---------------------------------------------------------------------------
+
+bool isRelative(const Element& e) {
+    return e.type == VType::Stack &&
+           (e.layout == StackLayout::Row || e.layout == StackLayout::Column);
+}
+
+float clamp01(float v) {
+    if (v < 0.0f) return 0.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+}
+
+// The union of a subtree's painted rectangles, in the subtree's current
+// (authored) coordinates. Used to size and place a group that does not carry an
+// explicit box of its own — a bare `stack()`.
+bool subtreeBounds(const Element& e, Rect& out) {
+    bool any = false;
+    auto add = [&any, &out](const Rect& r) {
+        if (!any) {
+            out = r;
+            any = true;
+            return;
+        }
+        const float x0 = std::min(out.x, r.x);
+        const float y0 = std::min(out.y, r.y);
+        const float x1 = std::max(out.right(), r.right());
+        const float y1 = std::max(out.bottom(), r.bottom());
+        out = Rect{ x0, y0, x1 - x0, y1 - y0 };
+    };
+
+    if (e.render) add(e.render->bounds);
+    if (e.clipsChildren) add(e.clipBounds);
+    for (const auto& c : e.children) {
+        Rect cb;
+        if (subtreeBounds(*c, cb)) add(cb);
+    }
+    return any;
+}
+
+// Moves an absolute subtree to a new place by shifting every rectangle in it —
+// paint bounds, clip bounds and the frame — by the same delta. Because glyphs
+// are stored node-local (see PlacedGlyph), text follows for free.
+void translateSubtree(Element& e, float dx, float dy) {
+    if (dx == 0.0f && dy == 0.0f) return;
+    if (e.render) {
+        e.render->bounds.x += dx;
+        e.render->bounds.y += dy;
+    }
+    if (e.clipsChildren) {
+        e.clipBounds.x += dx;
+        e.clipBounds.y += dy;
+    }
+    e.frameBox.x += dx;
+    e.frameBox.y += dy;
+    for (auto& c : e.children) translateSubtree(*c, dx, dy);
+}
+
+// The size a node wants when it is a child of a relative container: an explicit
+// hint wins, otherwise its intrinsic size.
+Size intrinsicSize(const Element& e, ReconcileCtx& ctx) {
+    switch (e.type) {
+    case VType::Text: {
+        float w = e.widthHint;
+        float h = e.heightHint;
+        if (w < 0.0f || h < 0.0f) {
+            float tw = 0.0f;
+            float th = 0.0f;
+            if (e.render && ctx.textSystem) {
+                text::ShapedLine line;
+                if (ctx.textSystem->shape(e.render->text.c_str(),
+                                          e.render->fontSize, line)) {
+                    tw = line.width;
+                }
+                th = ctx.textSystem->ascent(e.render->fontSize) +
+                     ctx.textSystem->descent(e.render->fontSize);
+            }
+            if (w < 0.0f) w = tw;
+            if (h < 0.0f) h = th;
+        }
+        return Size{ w, h };
+    }
+
+    case VType::Rect: {
+        const float w = e.widthHint  >= 0.0f ? e.widthHint
+                                             : (e.render ? e.render->bounds.w : 0.0f);
+        const float h = e.heightHint >= 0.0f ? e.heightHint
+                                             : (e.render ? e.render->bounds.h : 0.0f);
+        return Size{ w, h };
+    }
+
+    default: {   // Stack
+        if (isRelative(e)) {
+            const float w = e.widthHint  >= 0.0f ? e.widthHint  : e.frameBox.w;
+            const float h = e.heightHint >= 0.0f ? e.heightHint : e.frameBox.h;
+            return Size{ w, h };
+        }
+        float w = e.widthHint;
+        float h = e.heightHint;
+        if (w < 0.0f || h < 0.0f) {
+            Rect bb;
+            if (subtreeBounds(e, bb)) {
+                if (w < 0.0f) w = bb.w;
+                if (h < 0.0f) h = bb.h;
+            }
+        }
+        return Size{ w < 0.0f ? 0.0f : w, h < 0.0f ? 0.0f : h };
+    }
+    }
+}
+
+void arrangeNode(Element& e, float x, float y, float w, float h, ReconcileCtx& ctx);
+
+void arrangeContainer(Element& e, const Rect& frame, ReconcileCtx& ctx) {
+    e.frameBox = frame;
+
+    const bool   row    = (e.layout == StackLayout::Row);
+    const EdgeInsets pad = e.padding;
+    const float contentX = frame.x + pad.left;
+    const float contentY = frame.y + pad.top;
+    const float contentW = std::max(0.0f, frame.w - pad.horizontal());
+    const float contentH = std::max(0.0f, frame.h - pad.vertical());
+    const float contentCross = row ? contentH : contentW;
+    const float crossBase    = row ? contentY : contentX;
+
+    const size_t n = e.children.size();
+    std::vector<Size> sizes(n);
+
+    float fixedMain = 0.0f;
+    float totalFlex = 0.0f;
+    for (size_t i = 0; i < n; ++i) {
+        Element& c = *e.children[i];
+        sizes[i]   = intrinsicSize(c, ctx);
+        const float mainSlot =
+            row ? sizes[i].w + c.margin.horizontal()
+                : sizes[i].h + c.margin.vertical();
+        if (c.flex > 0.0f) totalFlex += c.flex;
+        else               fixedMain += mainSlot;
+    }
+
+    const float contentMain = row ? contentW : contentH;
+    const float gaps        = n > 1 ? e.gap * static_cast<float>(n - 1) : 0.0f;
+    float remaining = contentMain - fixedMain - gaps;
+    if (remaining < 0.0f) remaining = 0.0f;
+
+    float main = row ? contentX : contentY;
+    for (size_t i = 0; i < n; ++i) {
+        Element& c = *e.children[i];
+
+        float childW = sizes[i].w;
+        float childH = sizes[i].h;
+        if (totalFlex > 0.0f && c.flex > 0.0f) {
+            const float share = remaining * (c.flex / totalFlex);
+            if (row) childW = std::max(0.0f, share - c.margin.horizontal());
+            else     childH = std::max(0.0f, share - c.margin.vertical());
+        }
+
+        float cx;
+        float cy;
+        if (row) {
+            cx = main + c.margin.left;
+            const float slack = contentCross - c.margin.vertical() - childH;
+            cy = crossBase + c.margin.top + (slack > 0.0f ? slack * clamp01(c.alignY) : 0.0f);
+        } else {
+            cy = main + c.margin.top;
+            const float slack = contentCross - c.margin.horizontal() - childW;
+            cx = crossBase + c.margin.left + (slack > 0.0f ? slack * clamp01(c.alignX) : 0.0f);
+        }
+
+        arrangeNode(c, cx, cy, childW, childH, ctx);
+
+        main += row ? childW + c.margin.horizontal() : childH + c.margin.vertical();
+        if (i + 1 < n) main += e.gap;
+    }
+}
+
+void arrangeNode(Element& e, float x, float y, float w, float h, ReconcileCtx& ctx) {
+    if (isRelative(e)) {
+        arrangeContainer(e, Rect{ x, y, w, h }, ctx);
+        return;
+    }
+
+    if (e.type == VType::Stack) {
+        // An absolute group placed by a relative parent: move it as a whole so
+        // its current top-left lands on the slot. Prefer its explicit box; fall
+        // back to the bounding box of the subtree for a bare `stack()`.
+        float ox = e.frameBox.x;
+        float oy = e.frameBox.y;
+        if (e.frameBox.w <= 0.0f && e.frameBox.h <= 0.0f) {
+            Rect bb;
+            if (subtreeBounds(e, bb)) {
+                ox = bb.x;
+                oy = bb.y;
+            }
+        }
+        translateSubtree(e, x - ox, y - oy);
+        return;
+    }
+
+    if (e.render) {
+        e.render->bounds = Rect{ x, y, w, h };
+    }
+    e.frameBox = Rect{ x, y, w, h };
+}
+
 } // namespace
 
 void reconcile(Element& e, const VNode& v, ReconcileStats& stats, ReconcileCtx& ctx) {
@@ -285,6 +509,7 @@ void reconcile(Element& e, const VNode& v, ReconcileStats& stats, ReconcileCtx& 
     // (plan.md §6.1 criterion 4).
     e.clipsChildren = v.clipChildren;
     e.clipBounds    = v.clip;
+    copyLayout(e, v);
     if (v.type == VType::Rect || v.type == VType::Text) {
         if (!e.render) {
             e.render = makeRenderObject(v, ctx, stats);
@@ -319,6 +544,26 @@ NodeRef findByKey(const ElementPtr& root, Key key) {
         if (found.valid()) return found;
     }
     return NodeRef{};
+}
+
+void layoutTree(Element& root, ReconcileCtx& ctx) {
+    // The root itself can be a relative container (the common case for a
+    // full-window row/column): lay it out in its own authored frame.
+    if (isRelative(root)) {
+        arrangeContainer(root, root.frameBox, ctx);
+        return;
+    }
+
+    // Otherwise walk down. A relative container encountered here is one no
+    // relative parent placed — so it keeps its authored box, and its children
+    // are arranged inside it. Anything under it is handled by arrangeNode.
+    for (auto& child : root.children) {
+        if (isRelative(*child)) {
+            arrangeContainer(*child, child->frameBox, ctx);
+        } else {
+            layoutTree(*child, ctx);
+        }
+    }
 }
 
 } // namespace tac::ui

@@ -13,6 +13,7 @@
 
 // ---- values ---------------------------------------------------------------
 #include "tacui/geometry.hpp"       // Vec2, Rect, Color
+#include "tacui/layout.hpp"         // BoxConstraints, EdgeInsets, Size
 
 // ---- the retained tree ----------------------------------------------------
 #include "tacui/vnode.hpp"          // VNode, VNodeArena    — the description

@@ -12,6 +12,13 @@ class Builder;
 class Ui;
 struct BuildContext;
 
+// Options for a relative container. Matches the Props idiom the controls use,
+// so a row reads like any other control call.
+struct StackProps {
+    float      gap     = 0.0f;   // space between adjacent children
+    EdgeInsets padding;
+};
+
 // Shorthand so call sites read as colours rather than as a factory call.
 constexpr Color rgb(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
     return Color::rgba8(r, g, b, a);
@@ -34,10 +41,21 @@ public:
     Scope(const Scope&)            = delete;
     Scope& operator=(const Scope&) = delete;
 
+    // Container sizing hints. A container is one slot in its parent's layout,
+    // so the same hints a leaf takes apply here too.
+    Scope& width(float w);
+    Scope& height(float h);
+    Scope& flex(float f);
+    Scope& margin(EdgeInsets m);
+    Scope& margin(float all);
+    Scope& align(float x, float y);
+    Scope& padding(EdgeInsets p);
+
 private:
     friend class Builder;
-    explicit Scope(Builder* owner) : owner_(owner) {}
+    Scope(Builder* owner, VNode* node) : owner_(owner), node_(node) {}
     Builder* owner_ = nullptr;
+    VNode*   node_  = nullptr;
 };
 
 // Configures a leaf node. Setters chain:
@@ -51,6 +69,15 @@ public:
     Node& color(Color c);
     Node& key(Key k);
     Node& size(float fontSize);   // text nodes only
+
+    // Sizing hints, used when this node is a child of a relative container
+    // (row / column). Ignored in an absolute context, where `box` wins.
+    Node& width(float w);
+    Node& height(float h);
+    Node& flex(float f);
+    Node& margin(EdgeInsets m);
+    Node& margin(float all);
+    Node& align(float x, float y);
 
 private:
     friend class Builder;
@@ -74,6 +101,14 @@ public:
 
     // Opens a container. The first call also establishes the tree root.
     [[nodiscard]] Scope stack(Key key = kNoKey);
+
+    // Opens a container with an explicit box. Needed by anything that is itself
+    // a child of a relative container (a panel is one slot in a row).
+    [[nodiscard]] Scope stack(Rect box, Key key = kNoKey);
+
+    // Relative containers: the box is the frame the children are arranged in.
+    [[nodiscard]] Scope row(Rect box, const StackProps& props = {}, Key key = kNoKey);
+    [[nodiscard]] Scope column(Rect box, const StackProps& props = {}, Key key = kNoKey);
 
     // Opens a container whose subtree is clipped to `box` — both when painted
     // and when hit tested. Scroll views are built on this.
