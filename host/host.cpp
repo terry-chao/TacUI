@@ -1,9 +1,14 @@
 #include "tacui/host.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdio>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
 #include <vector>
 
 #include "platform/windows/win32_window.h"
@@ -148,17 +153,32 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
                      scale, physWidth, physHeight, opts.width, opts.height);
     }
 
-    rhi::SwapchainDesc desc{};
-    desc.window      = window.handle();
-    desc.width       = physWidth;
-    desc.height      = physHeight;
-    desc.bufferCount = 2;
+    // -----------------------------------------------------------------------
+    // Two threads from here on.
+    //
+    // Windows' modal move/size loop calls WM_SIZE *synchronously*, so any GPU
+    // work done in the message handler stalls the very loop that is moving the
+    // window — that is what made resizing judder. So the device and every GPU
+    // call move to a render thread, and the window procedure is left with
+    // nothing but two atomic stores.
+    //
+    // The mutex is the one place the two threads meet: the UI thread holds it
+    // while it touches the tree (input, app callback, update), the render
+    // thread holds it while it paints. Sizes travel through atomics.
+    // -----------------------------------------------------------------------
+    std::mutex            uiMutex;
+    std::atomic<uint32_t> frameW{ physWidth };
+    std::atomic<uint32_t> frameH{ physHeight };
+    std::atomic<bool>     running{ true };
+    std::atomic<bool>     deviceFailed{ false };
+    std::atomic<bool>     captureRequested{ false };
+    std::atomic<bool>     captureDone{ false };
+    std::mutex            captureMutex;
+    std::string           capturePath;
 
-    std::unique_ptr<rhi::Device> device = rhi::createD3D12Device(desc);
-    if (!device) {
-        std::fprintf(stderr, "[host] failed to create the D3D12 device\n");
-        return -2;
-    }
+    std::mutex              frameMutex;
+    std::condition_variable frameCv;
+    uint64_t                renderedFrames = 0;
 
     Control control;
     control.width_  = opts.width;
@@ -167,7 +187,7 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
     // Window events arrive in physical client pixels; the UI is authored in
     // logical units, so convert once here and everything downstream (hit
     // testing, app code) stays logical.
-    window.setEventFn([&event, &control, &ui, scale](const platform::WindowEvent& in) {
+    window.setEventFn([&](const platform::WindowEvent& in) {
         // Esc always quits, so examples do not each have to wire it up.
         if (in.type == platform::EventType::KeyDown && in.key == VK_ESCAPE) {
             control.exitRequested_ = true;
@@ -180,6 +200,8 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
             logical.y = static_cast<int32_t>(std::lround(in.y / scale));
         }
 
+        std::lock_guard<std::mutex> lock(uiMutex);
+
         // The framework owns interaction: hit testing, hover, press, focus.
         ui::InputEvent ie;
         if (toInputEvent(logical, ie)) ui.dispatchEvent(ie);
@@ -191,93 +213,136 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         if (toHostEvent(logical, out)) event(out);
     });
 
-    // Present from inside WM_SIZE. During a border drag Windows runs a modal
-    // resize loop inside DispatchMessage and the loop below never iterates, so
-    // without this the swapchain would stay at the old size and the desktop
-    // would stretch the stale frame for the whole drag.
-    //
-    // No app callbacks and no ui.update() here — only resize + repaint — so
-    // this stays safe to run re-entrantly from the window procedure.
-    uint32_t lastW = physWidth;
-    uint32_t lastH = physHeight;
-    bool     presenting = false;
+    // Nothing but bookkeeping: this runs inside Windows' modal drag loop.
     window.setResizeFn([&](uint32_t w, uint32_t h) {
-        if (presenting || w == 0 || h == 0 || (w == lastW && h == lastH)) return;
-        presenting = true;
-        lastW = w;
-        lastH = h;
-
+        if (w == 0 || h == 0) return;
+        frameW.store(w, std::memory_order_relaxed);
+        frameH.store(h, std::memory_order_relaxed);
         control.width_  = static_cast<uint32_t>(std::lround(w / scale));
         control.height_ = static_cast<uint32_t>(std::lround(h / scale));
-
-        // Do not wait for vblank here. A WM_SIZE arrives for every step of the
-        // drag; a vsync wait per step would make the content lag one size
-        // behind the window, which is exactly what shows up as jitter. The main
-        // loop restores vsync as soon as it runs again.
-        device->resize(w, h);
-        device->setVSync(false);
-        device->beginFrame(opts.clear);
-        ui.repaint(*device);   // the tree is unchanged; only the buffer resized
-        device->endFrame();
-
-        presenting = false;
     });
 
     // Build once before the first frame callback so the callback can resolve
     // node handles immediately rather than from frame two onwards.
-    ui.update();
+    { std::lock_guard<std::mutex> lock(uiMutex); ui.update(); }
+
+    std::thread renderThread([&] {
+        rhi::SwapchainDesc desc{};
+        desc.window      = window.handle();
+        desc.width       = physWidth;
+        desc.height      = physHeight;
+        desc.bufferCount = 2;
+
+        std::unique_ptr<rhi::Device> device = rhi::createD3D12Device(desc);
+        if (!device) {
+            deviceFailed.store(true);
+            running.store(false);
+            frameCv.notify_all();
+            return;
+        }
+
+        uint32_t curW = physWidth;
+        uint32_t curH = physHeight;
+
+        while (running.load(std::memory_order_relaxed)) {
+            const uint32_t w = frameW.load(std::memory_order_relaxed);
+            const uint32_t h = frameH.load(std::memory_order_relaxed);
+            const bool resizing = (w != curW || h != curH);
+            if (resizing) {
+                device->resize(w, h);
+                curW = w;
+                curH = h;
+            }
+
+            // Never wait for vblank while the size is still moving: the buffer
+            // has to catch up with the window, not fall a frame behind it.
+            device->setVSync(!resizing);
+
+            const bool doCapture = captureRequested.load(std::memory_order_relaxed);
+
+            device->beginFrame(opts.clear);
+            {
+                std::lock_guard<std::mutex> lock(uiMutex);
+                ui.paint(*device);
+            }
+            if (doCapture) device->captureFrame();
+            device->endFrame();
+            device->reportDiagnostics();
+
+            if (doCapture) {
+                std::string path;
+                { std::lock_guard<std::mutex> lock(captureMutex); path = capturePath; }
+
+                std::vector<uint8_t> pixels;
+                uint32_t capW = 0;
+                uint32_t capH = 0;
+                if (device->readbackFrame(pixels, capW, capH)) {
+                    writeCapture(path, pixels, capW, capH);
+                }
+                captureRequested.store(false, std::memory_order_relaxed);
+                captureDone.store(true, std::memory_order_relaxed);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                ++renderedFrames;
+            }
+            frameCv.notify_all();
+        }
+
+        device.reset();   // D3D12 objects die on the thread that used them
+    });
 
     window.show();
 
     const auto start = std::chrono::steady_clock::now();
+    uint64_t   seenFrames = 0;
 
-    while (window.pumpMessages()) {
-        uint32_t w = 0;
-        uint32_t h = 0;
-        if (window.consumeResize(w, h)) {
-            device->resize(w, h);   // physical back buffer
-            control.width_  = static_cast<uint32_t>(std::lround(w / scale));
-            control.height_ = static_cast<uint32_t>(std::lround(h / scale));
+    while (!control.exitRequested_ && window.pumpMessages()) {
+        // One UI iteration per presented frame. Without this the loop would
+        // spin, and the app's frame callback would run far more often than
+        // anything actually gets drawn.
+        {
+            std::unique_lock<std::mutex> lock(frameMutex);
+            frameCv.wait_for(lock, std::chrono::milliseconds(50),
+                             [&] { return renderedFrames > seenFrames; });
+            seenFrames = renderedFrames;
         }
+        if (deviceFailed.load()) break;
 
         const double elapsed =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
-        if (frame) frame(control, elapsed);
-
-        if (elapsed >= opts.maxSeconds && opts.maxSeconds > 0.0) {
-            control.exitRequested_ = true;
-        }
-
-        ui.update();
-
-        const bool doCapture = control.captureRequested_;
-        device->setVSync(true);
-        device->beginFrame(opts.clear);
-        ui.paint(*device);
-        if (doCapture) device->captureFrame();
-        device->endFrame();
-        device->reportDiagnostics();
-
-        if (doCapture) {
-            std::vector<uint8_t> pixels;
-            uint32_t capW = 0;
-            uint32_t capH = 0;
-            if (device->readbackFrame(pixels, capW, capH)) {
-                writeCapture(control.capturePath_, pixels, capW, capH);
+        {
+            std::lock_guard<std::mutex> lock(uiMutex);
+            if (frame) frame(control, elapsed);
+            if (elapsed >= opts.maxSeconds && opts.maxSeconds > 0.0) {
+                control.exitRequested_ = true;
             }
-            control.captureRequested_ = false;
-            control.exitRequested_    = true;
+            ui.update();
         }
+
+        // Hand a capture request to the renderer; it owns the device.
+        if (control.captureRequested_) {
+            {
+                std::lock_guard<std::mutex> lock(captureMutex);
+                capturePath = control.capturePath_;
+            }
+            captureRequested.store(true, std::memory_order_relaxed);
+            control.captureRequested_ = false;
+        }
+        if (captureDone.load()) control.exitRequested_ = true;
 
         ++control.frame_;
-
-        if (control.exitRequested_) break;
     }
+
+    running.store(false);
+    frameCv.notify_all();
+    if (renderThread.joinable()) renderThread.join();
 
     // Deliberately no ui.shutdown() here: the caller may still want to inspect
     // the tree (the M0 harness asserts on it after the loop). ~Ui handles it.
-    return 0;
+    return deviceFailed.load() ? -2 : 0;
 }
 
 } // namespace tac::host
