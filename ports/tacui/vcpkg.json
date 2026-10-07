@@ -1,0 +1,19 @@
+{
+  "name": "tacui",
+  "version-semver": "0.1.0",
+  "description": "TacUI — a retained-mode, GPU-rendered UI library for Windows, with a C ABI for host languages.",
+  "homepage": "https://github.com/terry-chao/TacUI",
+  "documentation": "https://terry-chao.github.io/TacUI/",
+  "license": "MIT",
+  "supports": "windows & !uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}
