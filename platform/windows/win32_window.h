@@ -58,6 +58,14 @@ public:
 
     void setEventFn(EventFn fn) { onEvent_ = std::move(fn); }
 
+    // Invoked from the window procedure on WM_SIZE — including *during* the
+    // modal resize loop, where the host's frame loop is blocked inside
+    // DispatchMessage. The host resizes the swapchain and presents a frame
+    // here, so dragging the border shows live content instead of the desktop
+    // stretching the last presented bitmap.
+    using ResizeFn = std::function<void(uint32_t width, uint32_t height)>;
+    void setResizeFn(ResizeFn fn) { onResize_ = std::move(fn); }
+
     // Drains the message queue. Returns false once the window has closed.
     bool pumpMessages();
 
@@ -71,6 +79,7 @@ private:
 
     HWND     hwnd_ = nullptr;
     EventFn  onEvent_;
+    ResizeFn onResize_;
     bool     quit_ = false;
 
     bool     resized_       = false;

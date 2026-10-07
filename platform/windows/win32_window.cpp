@@ -130,6 +130,9 @@ LRESULT Win32Window::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             pendingWidth_  = w;
             pendingHeight_ = h;
             if (onEvent_) onEvent_({ EventType::Resize, 0, 0, w, h, 0, false });
+            // Resize + present right here: during a border drag this runs from
+            // inside the modal loop, when the host's own frame loop cannot.
+            if (onResize_) onResize_(w, h);
         }
         return 0;
     }

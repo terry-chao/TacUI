@@ -191,11 +191,38 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
         if (toHostEvent(logical, out)) event(out);
     });
 
-    window.show();
+    // Present from inside WM_SIZE. During a border drag Windows runs a modal
+    // resize loop inside DispatchMessage and the loop below never iterates, so
+    // without this the swapchain would stay at the old size and the desktop
+    // would stretch the stale frame for the whole drag.
+    //
+    // No app callbacks and no ui.update() here — only resize + repaint — so
+    // this stays safe to run re-entrantly from the window procedure.
+    uint32_t lastW = physWidth;
+    uint32_t lastH = physHeight;
+    bool     presenting = false;
+    window.setResizeFn([&](uint32_t w, uint32_t h) {
+        if (presenting || w == 0 || h == 0 || (w == lastW && h == lastH)) return;
+        presenting = true;
+        lastW = w;
+        lastH = h;
+
+        device->resize(w, h);
+        control.width_  = static_cast<uint32_t>(std::lround(w / scale));
+        control.height_ = static_cast<uint32_t>(std::lround(h / scale));
+
+        device->beginFrame(opts.clear);
+        ui.paint(*device);
+        device->endFrame();
+
+        presenting = false;
+    });
 
     // Build once before the first frame callback so the callback can resolve
     // node handles immediately rather than from frame two onwards.
     ui.update();
+
+    window.show();
 
     const auto start = std::chrono::steady_clock::now();
 
