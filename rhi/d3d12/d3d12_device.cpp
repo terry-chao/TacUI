@@ -219,6 +219,11 @@ void D3D12Device::beginFrame(Color clear) {
 
     const uint32_t idx = swapchain_->GetCurrentBackBufferIndex();
 
+    // Rewind the per-frame instance cursors: the UI records an ordered draw
+    // list, so each batch is called several times per frame and appends.
+    batch_.beginFrame(frameIndex_);
+    text_.beginFrame(frameIndex_);
+
     check(allocators_[frameIndex_]->Reset(), "CommandAllocator::Reset");
     check(cmd_->Reset(allocators_[frameIndex_].Get(), nullptr), "CommandList::Reset");
 

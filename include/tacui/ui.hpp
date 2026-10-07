@@ -203,9 +203,27 @@ private:
     text::GlyphAtlas atlas_;
     bool             atlasDirty_ = false;
 
-    std::vector<rhi::SdfRect>    rects_;
-    std::vector<rhi::GlyphQuad>  quads_;
-    Stats                        stats_;
+    // Paint submission is an ordered list of runs: a maximal stretch of
+    // same-type primitives. Rect and glyph runs are interleaved in tree order
+    // and paint issues one draw call per run, which is what makes "a rect under
+    // a later text node" draw under it — the old two-batch split drew every
+    // rect before every glyph.
+    struct DrawRun {
+        bool     text  = false;
+        uint32_t begin = 0;   // index into quads_ (text) or rects_
+        uint32_t count = 0;
+    };
+
+    void collectPaint(const Element& e, Rect clip, bool clipped);
+    void pushRect(const rhi::SdfRect& r);
+    void pushQuad(const rhi::GlyphQuad& q);
+
+    std::vector<rhi::SdfRect>   rects_;
+    std::vector<rhi::GlyphQuad> quads_;
+    std::vector<DrawRun>        runs_;
+    uint64_t                    glyphQuadCount_ = 0;
+    uint32_t                    liveOverrides_  = 0;
+    Stats                       stats_;
 };
 
 } // namespace tac::ui

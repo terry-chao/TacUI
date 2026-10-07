@@ -39,6 +39,11 @@ public:
     bool init(ID3D12Device* device, DXGI_FORMAT rtvFormat);
     void shutdown();
 
+    // Resets this frame's instance cursor. Call once per frame, before any
+    // record(): the batch appends within a frame, so several drawSdfRects()
+    // calls in one frame stack up instead of overwriting each other.
+    void beginFrame(uint32_t frameIndex);
+
     // Records the draw into an already-open command list. `frameIndex` selects
     // the ring-buffer slot; the caller guarantees the GPU is done with that
     // slot before this is called.
@@ -60,6 +65,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap_;
 
     Instance* mapped_ = nullptr;
+
+    // Instances already written into each frame's slice. Reset by beginFrame().
+    uint32_t used_[kFramesInFlight] = {};
 };
 
 } // namespace tac::rhi

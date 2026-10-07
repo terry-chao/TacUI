@@ -39,6 +39,11 @@ public:
     bool init(ID3D12Device* device, DXGI_FORMAT rtvFormat, uint32_t atlasSize);
     void shutdown();
 
+    // Resets this frame's instance cursor. Call once per frame, before any
+    // record(): the batch appends within a frame, so several drawGlyphQuads()
+    // calls in one frame stack up instead of overwriting each other.
+    void beginFrame(uint32_t frameIndex);
+
     // Copies `pixels` into the staging buffer. The GPU-side copy is recorded
     // during the next record() call.
     void uploadAtlas(const uint8_t* pixels, uint32_t size);
@@ -69,6 +74,9 @@ private:
     uint32_t atlasRowPitch_ = 0;
     bool     atlasPending_  = false;
     uint32_t srvStride_     = 0;
+
+    // Quads already written into each frame's slice. Reset by beginFrame().
+    uint32_t used_[kFramesInFlight] = {};
 };
 
 } // namespace tac::rhi

@@ -82,7 +82,9 @@ public:
     virtual void reportDiagnostics() {}
 
     // Records a batch of rounded rectangles. Must be called between beginFrame
-    // and endFrame; draw order follows array order (painter's algorithm).
+    // and endFrame; draw order follows array order (painter's algorithm), and
+    // successive calls within a frame draw in submission order. That is what
+    // lets the UI submit rect and glyph runs interleaved, in tree order.
     virtual void drawSdfRects(const SdfRect* rects, uint32_t count) = 0;
 
     // Uploads the coverage atlas. `pixels` is a size*size single-channel image,
@@ -91,7 +93,7 @@ public:
     virtual void setGlyphAtlas(const uint8_t* /*pixels*/, uint32_t /*size*/) {}
 
     // Records a batch of glyph quads. Like drawSdfRects, must sit between
-    // beginFrame and endFrame.
+    // beginFrame and endFrame, and draws in submission order.
     virtual void drawGlyphQuads(const GlyphQuad* /*quads*/, uint32_t /*count*/) {}
 
     // Records a full-frame copy into a staging buffer. Must be called between

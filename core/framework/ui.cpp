@@ -25,18 +25,27 @@ Rect intersectRect(const Rect& a, const Rect& b) {
     return Rect{ x0, y0, std::max(0.0f, x1 - x0), std::max(0.0f, y1 - y0) };
 }
 
-// Paint order is tree order, i.e. the painter's algorithm — within a node type.
+void collectFocusable(const Element& e,
+                      const std::unordered_map<Key, NodeBehavior>& behaviors,
+                      std::vector<Key>& out) {
+    const auto b = behaviors.find(e.key);
+    if (b != behaviors.end() && b->second.focusable) {
+        out.push_back(e.key);
+    }
+    for (const auto& c : e.children) {
+        collectFocusable(*c, behaviors, out);
+    }
+}
+
+} // namespace
+
+// Paint order is tree order, i.e. the painter's algorithm — across node types.
 //
-// M0 limitation: rectangles and glyphs go to two separate batches, so all
-// rects are drawn before all text regardless of tree order. That is fine when
-// text sits on top of its background (the usual case) but wrong in general.
-// M1 replaces this with a single ordered draw list.
-void collect(const Element& e,
-             std::vector<rhi::SdfRect>& rects,
-             std::vector<rhi::GlyphQuad>& quads,
-             uint64_t& glyphQuadCount,
-             uint32_t& liveOverrides,
-             Rect clip, bool clipped) {
+// Rectangles and glyphs land in separate buffers but share one ordered run
+// list, so paint submits them interleaved in the order the tree was walked.
+// (M0 drew two whole batches, rects first, which was wrong whenever text sat
+// under a later rect.)
+void Ui::collectPaint(const Element& e, Rect clip, bool clipped) {
     // A clip container narrows the scissor for everything below it. Folding it
     // in here means the primitive carries its own final clip, so the backend
     // never has to know the tree shape — and one instanced draw call still
@@ -51,7 +60,7 @@ void collect(const Element& e,
 
     if (e.render) {
         const RenderObject& ro = *e.render;
-        if (ro.overrideActive) ++liveOverrides;
+        if (ro.overrideActive) ++liveOverrides_;
 
         if (e.type == VType::Rect) {
             rhi::SdfRect r{};
@@ -59,7 +68,7 @@ void collect(const Element& e,
             r.cornerRadius = ro.cornerRadius;
             r.color        = effectiveColor(ro);
             r.clip         = scissor;
-            rects.push_back(r);
+            pushRect(r);
         } else if (e.type == VType::Text) {
             // The glyph cache holds node-local positions; the node origin is
             // applied here. Snap the *final* origin to whole pixels — drawing a
@@ -80,30 +89,32 @@ void collect(const Element& e,
                 q.v1 = g.v1;
                 q.color = tint;
                 q.clip  = scissor;
-                quads.push_back(q);
-                ++glyphQuadCount;
+                pushQuad(q);
             }
         }
     }
 
     for (const auto& c : e.children) {
-        collect(*c, rects, quads, glyphQuadCount, liveOverrides, clip, clipped);
+        collectPaint(*c, clip, clipped);
     }
 }
 
-void collectFocusable(const Element& e,
-                      const std::unordered_map<Key, NodeBehavior>& behaviors,
-                      std::vector<Key>& out) {
-    const auto b = behaviors.find(e.key);
-    if (b != behaviors.end() && b->second.focusable) {
-        out.push_back(e.key);
+void Ui::pushRect(const rhi::SdfRect& r) {
+    if (runs_.empty() || runs_.back().text) {
+        runs_.push_back(DrawRun{ false, static_cast<uint32_t>(rects_.size()), 0 });
     }
-    for (const auto& c : e.children) {
-        collectFocusable(*c, behaviors, out);
-    }
+    rects_.push_back(r);
+    ++runs_.back().count;
 }
 
-} // namespace
+void Ui::pushQuad(const rhi::GlyphQuad& q) {
+    if (runs_.empty() || !runs_.back().text) {
+        runs_.push_back(DrawRun{ true, static_cast<uint32_t>(quads_.size()), 0 });
+    }
+    quads_.push_back(q);
+    ++runs_.back().count;
+    ++glyphQuadCount_;
+}
 
 bool Ui::init(BuildFn build, const char* fontFamily) {
     build_ = std::move(build);
@@ -203,11 +214,12 @@ bool Ui::update() {
 void Ui::paint(rhi::Device& device) {
     rects_.clear();
     quads_.clear();
+    runs_.clear();
+    glyphQuadCount_ = 0;
+    liveOverrides_  = 0;
 
-    uint64_t quadCount     = 0;
-    uint32_t liveOverrides = 0;
     if (root_) {
-        collect(*root_, rects_, quads_, quadCount, liveOverrides, Rect{}, false);
+        collectPaint(*root_, Rect{}, false);
     }
 
     // Upload only when the atlas actually gained glyphs — the steady state is
@@ -218,16 +230,24 @@ void Ui::paint(rhi::Device& device) {
         ++stats_.atlasUploads;
     }
 
-    device.drawSdfRects(rects_.data(), static_cast<uint32_t>(rects_.size()));
-    device.drawGlyphQuads(quads_.data(), static_cast<uint32_t>(quads_.size()));
+    // One draw call per run, submitted in tree order, so a rect run and a glyph
+    // run interleave exactly as the tree was walked.
+    for (const DrawRun& run : runs_) {
+        if (run.count == 0) continue;
+        if (run.text) {
+            device.drawGlyphQuads(quads_.data() + run.begin, run.count);
+        } else {
+            device.drawSdfRects(rects_.data() + run.begin, run.count);
+        }
+    }
 
     const auto& as = atlas_.stats();
     stats_.glyphsRasterized = as.rasterized;
     stats_.glyphCacheHits   = as.hits;
-    stats_.glyphQuads       = quadCount;
+    stats_.glyphQuads       = glyphQuadCount_;
     // Observed per frame, not per rebuild: overrides come and go without the
     // tree ever being dirty, so update() would leave this stale.
-    stats_.liveOverrides    = liveOverrides;
+    stats_.liveOverrides    = liveOverrides_;
     ++stats_.paints;
 }
 

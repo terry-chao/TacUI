@@ -180,6 +180,10 @@ void D3D12SdfBatch::shutdown() {
     device_ = nullptr;
 }
 
+void D3D12SdfBatch::beginFrame(uint32_t frameIndex) {
+    if (frameIndex < kFramesInFlight) used_[frameIndex] = 0;
+}
+
 void D3D12SdfBatch::record(ID3D12GraphicsCommandList* cmd,
                            uint32_t frameIndex,
                            float viewportWidth,
@@ -187,14 +191,23 @@ void D3D12SdfBatch::record(ID3D12GraphicsCommandList* cmd,
                            const SdfRect* rects,
                            uint32_t count) {
     if (count == 0 || !pso_) return;
-    if (count > kMaxInstancesPerFrame) {
-        std::fprintf(stderr,
-                     "[rhi] drawSdfRects: %u rects exceeds the %u-per-frame cap; clipped\n",
-                     count, kMaxInstancesPerFrame);
-        count = kMaxInstancesPerFrame;
-    }
 
-    const uint32_t base = frameIndex * kMaxInstancesPerFrame;
+    // Append within the frame: several drawSdfRects() calls in one frame are
+    // normal now that the UI emits an ordered draw list (rect runs interleaved
+    // with glyph runs), so the instance base advances instead of staying at the
+    // start of the frame's slice.
+    uint32_t& used = used_[frameIndex];
+    const uint32_t room =
+        used < kMaxInstancesPerFrame ? kMaxInstancesPerFrame - used : 0u;
+    if (count > room) {
+        std::fprintf(stderr,
+                     "[rhi] drawSdfRects: %u rects exceeds the remaining %u-per-frame cap; clipped\n",
+                     count, room);
+        count = room;
+    }
+    if (count == 0) return;
+
+    const uint32_t base = frameIndex * kMaxInstancesPerFrame + used;
     Instance* dst = mapped_ + base;
 
     for (uint32_t i = 0; i < count; ++i) {
@@ -234,6 +247,7 @@ void D3D12SdfBatch::record(ID3D12GraphicsCommandList* cmd,
 
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(6, count, 0, 0);
+    used += count;
 }
 
 } // namespace tac::rhi
