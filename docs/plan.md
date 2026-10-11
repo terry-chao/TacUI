@@ -303,7 +303,7 @@ M0 **不是** "Hello World 按钮"。M0 的任务是**验证架构里最冒险�
 
     最终做法：同步 resize + 拖动期间关 vsync + 重绘走新增的 **`Ui::repaint()`**（只重发上次收集好的 draw list，不重新遍历树——内容本来就不随窗口尺寸变化）。每步 `draw+present` 从 2.57ms 降到 **0.50ms**；再拆开量，剩下的是 `ResizeBuffers` 本身（1.73ms，`waitForGpu` 只有 0.01ms、建 RTV 0.01ms）——这是每步 resize 的硬下限。**快拖时还会抖**，因为应用可能跟不上：`WM_SIZE` 在队列里堆积，应用还在为上一个尺寸做 `ResizeBuffers`，缓冲永远差一截。所以 `WM_SIZE` 里**把队列中还没处理的 `WM_SIZE` 一次性抽干、只取最新尺寸**（`PeekMessage` 合并），一次工作跟到最新尺寸，不再追赶中间态。探针复测：同步步进 8 步全部 立刻 = 稳定 = 233。
 
-**M0 之后的工作**见 [components.md](components.md)：输入系统（命中测试 / hover / press / 焦点 / Tab）、主题令牌、12 个 L2 控件、`ScrollView` / `ListView` 与相对布局（row / column）已完成（见 [布局](layout.md)）；其余 L2、通用约束传播、`Popup`、IME 待做。
+**M0 之后的工作**见 [components.md](components.md)：输入系统（命中测试 / hover / press / 焦点 / Tab）、主题令牌、12 个 L2 控件、`ScrollView` / `ListView`、相对布局与**两遍 measure / arrange**（约束下落、`kAuto` 按内容撑开、文本自动换行）已完成（见 [布局](layout.md)）；滚动容器接入相对布局、其余 L2、`Popup`、IME 待做。
 
 **从 Python 宿主得到的 ABI 反馈：**
 - 代际句柄（`{index, generation}`，8 字节）在 ctypes 下工作良好，`__bool__` 语义自然

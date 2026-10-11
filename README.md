@@ -15,7 +15,9 @@ Brand assets live in [`brand/`](brand/README.md) — the mark, lockups, app icon
 with a C++ core and a C ABI that a non-C++ language can drive. See
 [docs/plan.md](docs/plan.md) §6.1 for exactly what that does and does not
 include. Relative layout has since landed — `row` / `column` arrange their
-children from a frame, so controls stop needing a hand-computed box
+children from a two-pass measure/arrange, so controls stop needing a
+hand-computed box, a container can size itself to its content (`kAuto`) and
+text wraps when it is offered less width than it wants
 ([docs/layout.md](docs/layout.md)). The text stack is still minimal.
 
 ## Build
@@ -30,7 +32,7 @@ cmake --build build --config Debug
 | Target | What it is |
 |--------|-----------|
 | `asset_browser` | the example below — run this first |
-| `controls_gallery` | every control in one window; `--input-test` asserts the control layer headlessly |
+| `controls_gallery` | every control in one window; `--input-test` / `--layout-test` assert the control and layout layers headlessly |
 | `m0` | the validation harness; `--selftest` asserts every M0 criterion |
 | `tacui.dll` | the C ABI, for host languages (`bindings/python`) |
 | `textprobe` | text stack in isolation, no GPU needed |
@@ -96,11 +98,13 @@ Each control is a **function**, not a class, and none of them tracks its own
 hover/press/focus state — the input system owns that, so the region that lights
 up is by construction the region that responds.
 
-Layout is relative: `b.row(box, ...)` and `b.column(box, ...)` arrange their
-children inside a frame, so a control lands where the container puts it instead
-of at a hand-computed x/y. Sizing hints, `flex`, `gap`, `margin` and alignment
-do the rest; each control wraps itself in one container, so it occupies exactly
-one slot. Absolute boxes still work exactly as before. See
+Layout is relative: `b.row(box, ...)` and `b.column(box, ...)` measure their
+children under a constraint and then arrange them, so a control lands where the
+container puts it instead of at a hand-computed x/y. Sizing hints, `flex`,
+`gap`, `margin` and alignment do the rest; each control wraps itself in one
+container, so it occupies exactly one slot. A frame axis written as `kAuto`
+grows to fit the content instead of asking for a box, and text wraps when it is
+offered less width than it wants. Absolute boxes still work exactly as before. See
 [docs/layout.md](docs/layout.md).
 
 The same controls are exported over the C ABI (`tui_button`, `tui_checkbox`,
@@ -215,7 +219,7 @@ lives at the level of a single property, not the whole framework.
 - [docs/rendering.md](docs/rendering.md) — how a frame is actually drawn: batching,
   analytic SDF AA, the glyph atlas, clip-per-primitive, DPI, capture
 - [docs/framework.md](docs/framework.md) — reconcile, the one-level override channel,
-  frame-based layout, hit chain and bubbling
+  two-pass layout, hit chain and bubbling
 - [docs/gotchas.md](docs/gotchas.md) — the hard-won lessons, symptom → cause → rule
 
 ```

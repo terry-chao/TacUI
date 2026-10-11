@@ -203,18 +203,23 @@ struct DrawRun { bool text; uint32_t begin; uint32_t count; };
 
 ---
 
-## 文本：在 reconcile 里 shape，在 paint 里只是发 quad
+## 文本：在 reconcile / 布局里 shape，在 paint 里只是发 quad
 
-文本是 CPU 成本最大的一块，所以**所有 shaping 和字形查找都发生在 reconcile**，
-paint 只做「读缓存、发实例」。一帧稳态文本工作量为零。
+文本是 CPU 成本最大的一块，所以**所有 shaping 和字形查找都发生在 reconcile 与
+布局阶段**（update 里，每次改动一次），paint 只做「读缓存、发实例」。
+一帧稳态文本工作量为零。
 
 ### 三个阶段
 
 ```
 reconcile（只在字符串/字号/scale 变化时）
-  TextSystem::shape        逻辑字号 → ShapedLine（glyph index + face + 小数 advance）
+  TextSystem::shapeBlock   逻辑字号 + 换行宽度 → ShapedBlock（多行，每行 glyph index
+                           + face + 小数 advance），宽度不够时按词/按字符断行
   GlyphAtlas::get          (face, glyph, sizeBucket) → 图集槽位，未命中才光栅化
-  → RenderObject::placed   节点局部坐标（物理像素）的字形矩形 + UV
+  → RenderObject::placed   节点局部坐标（物理像素）的字形矩形 + UV，含行偏移
+
+布局（只在约束比节点自己的宽度更紧时）
+  换一个换行宽度再 shapeBlock 一次；缓存键是 (文本, 字号, DPI, 换行宽度)
 
 paint（每帧）
   origin × scale，字形原点吸附整像素，发 rhi::GlyphQuad
@@ -285,6 +290,7 @@ if (ctx.atlasDirty && ctx.atlas->stats().rasterized != rasterizedBefore) {
 
 ```
 shape()      逻辑字号 → ShapedLine（glyph index + face + advance）
+shapeBlock() 逻辑字号 + 换行宽度 → ShapedBlock（多行，断行在上面的贪心规则里）
 rasterize()  (face, glyphIndex, 物理字号) → 8-bit 覆盖位图
 ```
 
@@ -303,8 +309,9 @@ rasterize()  (face, glyphIndex, 物理字号) → 8-bit 覆盖位图
 `MapCharacters` 返回的指针不保证跨调用稳定，按指针做键会每次 rebuild 都造一个新 face，
 把字形缓存彻底打穿。
 
-当前文本栈的**故意限制**：码点→字形 1:1（无连字、无复杂文种整形）、单行不换行、
-无 bidi、无 IME。替换点是 M1。
+当前文本栈的**故意限制**：码点→字形 1:1（无连字、无复杂文种整形）、无 bidi、
+无 IME。断行是贪心的（空格 / CJK 字符边界 / 词内兜底），没有 ICU 的断行规则表。
+替换点是 M1。
 
 ---
 

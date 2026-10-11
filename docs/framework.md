@@ -1,6 +1,6 @@
 # 框架实现
 
-> 状态：**M0/M2 已落地的部分** —— 三棵树、reconcile、override、帧式布局、输入路由。
+> 状态：**M0/M2 已落地的部分** —— 三棵树、reconcile、override、两遍布局、输入路由。
 > 对应实现：`include/tacui/{vnode,element,ui,input,layout}.hpp`、
 > `core/framework/*.cpp`。**为什么**这么分层见 [架构 §2/§14](architecture.md)；
 > 本文写**代码实际怎么运转、每条规则的边界在哪**。
@@ -63,7 +63,7 @@ reconcile(e, v):
   else:
       → 同一个节点：只写 base
         · 更新 bounds / color / cornerRadius / layout 字段
-        · 文本/字号/scale 变了才重新 shape
+        · 文本/字号/scale 变了才重新 shape（换行宽度由布局那条路问）
         · **绝不碰 override 通道**   ← M0 第 4 条标准就靠这一条
         · reconcileChildren（目前按位置匹配）
 ```
@@ -119,30 +119,39 @@ Color effectiveColor (const RenderObject& ro) { return ro.baseColor × overrideO
 
 ---
 
-## 布局：帧式，先 reconcile 后布局
+## 布局：两遍 measure / arrange，先 reconcile 后布局
 
-布局是**帧式**的（[方案](plan.md) D6）：容器拿到一个明确的盒，再把它分给子节点。
-`BoxConstraints` 是这次分配说的语言，是纯值类型（能过 C ABI，虚函数不能）。
+布局是**两遍**的（[方案](plan.md) D6）：`measure` 自下而上回答「在这个约束下我想要
+多大」，`arrange` 自上而下回答「父节点定好了槽位，把子树放进去」。`BoxConstraints`
+是这两遍之间说的语言，是纯值类型（能过 C ABI，虚函数不能）。
 
 ### 顺序：reconcile → layout，不能反
 
 ```cpp
-reconcile(*root_, *v, rs, ctx);   // 顺便 shape 文本
-layoutTree(*root_, ctx);          // 需要 intrinsic 文本宽度，所以必须在后面
+reconcile(*root_, *v, rs, ctx);      // 顺便 shape 文本（还不知道换行宽度）
+layoutTree(*root_, ctx, &rs);        // 测量要按约束重新 shape，所以必须在后面
 ```
 
-文本节点的内在尺寸要靠 shaping 结果，而 shaping 发生在 reconcile 里，
-所以布局必须排在 reconcile 之后。
+文本节点报的尺寸取决于**它拿到多宽**：同一个字符串，宽 300 是一行、宽 120 是三行。
+这个宽度只有布局阶段知道，所以布局必须排在 reconcile 之后，而且它可能会带着新的
+换行宽度再 shape 一次。缓存键因此是 `(文本, 字号, DPI, 换行宽度)` 四项 ——
+少了最后一项，布局就会每帧重排文本。
 
 ### 相对容器：row / column
 
-`Stack` 带 `layout = Row | Column` 就成了相对容器。分配算法（`arrangeContainer`）：
+`Stack` 带 `layout = Row | Column` 就成了相对容器。measure 与 arrange 共用
+`planContainer` 这一份分配逻辑：
 
-1. 内缩 `padding` 得到内容区；
-2. 每个孩子算 `intrinsicSize`（显式 hint 优先，否则内在尺寸）；
+1. 内缩 `padding` 得到内容区，`kAuto` 的轴不设上界（那就是「撑开」）；
+2. 每个孩子 **measure**：主轴给上界 `∞`（非 flex 的孩子保持自己的尺寸），
+   交叉轴给容器这一轴的**实际余量** —— 这一条就是「子节点尺寸依赖父节点约束」；
 3. 固定孩子占用主轴总量，`flex > 0` 的孩子按权重分**剩余**主轴；
 4. 主轴依次排列，间隔 `gap`；交叉轴按 `alignX/alignY`（0=起点，0.5=居中，1=终点）；
-5. 孩子自己的 `margin` 在槽位内再内缩。
+5. 孩子自己的 `margin` 在槽位内再内缩；
+6. 容器自己的尺寸 = 约束下的「内容之和」或钉住的帧，主轴有界时按条填满。
+
+`arrangeContainer` 会带着**实际拿到的盒**再解一次同样的规划，所以 flex 分配、
+交叉轴余量用的都是子节点真正拥有的空间，而不是测量时的猜测。
 
 ### 绝对子树整体平移（一个必须做对的地方）
 
@@ -161,10 +170,9 @@ void translateSubtree(Element& e, float dx, float dy);  // 平移 paint bounds�
 
 | 限制 | 影响 | 何时需要 |
 |------|------|----------|
-| 帧式而非两遍约束 | 容器必须有明确盒 | 自动换行、按内容撑开窗口 |
 | 只有单行/单列 | 无 `WrapPanel` / `Grid` | 网格、流式布局 |
 | 控件不随槽位重排内部 | `flex` 拉伸槽位，但控件内部绝对坐标不动 | 按钮随窗口变宽 |
-| 交叉轴 intrinsic 单遍 | 交叉轴依赖主轴的孩子要二次回测 | 少见，接受 |
+| 交叉轴只测一遍 | 主轴被 `flex` 改动后不回测交叉轴：`flex` 的文本节点不按新宽度重排 | 少见，接受 |
 
 ---
 
@@ -253,8 +261,9 @@ shutdown —— 调用方（m0 的断言）要在 run 之后继续看树。
 |------|------|
 | `m0 --selftest` | 三棵树的 retained、两条路径共存、代际句柄 |
 | `controls_gallery --input-test` | 交互：点击/拖拽/焦点/滚轮/虚拟化/裁剪命中 |
-| `controls_gallery --layout-test` | 布局：padding/gap/flex/align/绝对子树平移/命中用布局位置 |
+| `controls_gallery --layout-test` | 布局：padding/gap/flex/align/绝对子树平移/`kAuto` 撑开/自动换行/命中用布局位置 |
 | `controls_gallery --paint-test` | 绘制顺序交错 + scissor 有无意外 |
+| `textprobe [--cjk]` | 文本栈：字形、图集 UV 1:1、断行（超宽、丢字、行高、无空格 token） |
 | `bindings/python/controls_test.py` | 同一套控件经 C ABI 的头less 验证 |
 
 ## 接着读

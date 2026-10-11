@@ -36,7 +36,7 @@ GPU 加速 · **retained mode** · C++ 核心 · 多语言**原生声明式** UI
 | **可嵌入的 core** | core 无宿主语言依赖；已有窗口与渲染器的应用自行驱动 `update()` / `paint()` | [写一个 UI](building-ui.md) |
 | **组件与主题** | 先做 core 输入系统（命中 / 路由 / 焦点 / 捕获），组件放 core，主题走令牌 | [组件设计](components.md) |
 | **渲染管线** | 两条 instanced 管线、解析 SDF AA、R8 字形图集、逐图元 clip、树序绘制 | [渲染管线](rendering.md) |
-| **框架实现** | arena 重建、reconcile 只写 base、一层 override、帧式布局、命中链冒泡 | [框架实现](framework.md) |
+| **框架实现** | arena 重建、reconcile 只写 base、一层 override、两遍布局、命中链冒泡 | [框架实现](framework.md) |
 
 ## 先读这几篇定坐标
 

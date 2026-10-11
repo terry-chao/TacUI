@@ -187,7 +187,8 @@ ui.setTheme(ui::lightTheme());
 | ~~1~~ | ~~事件冒泡~~ | ✅ 已做 |
 | ~~2~~ | ~~裁剪~~ | ✅ 已做 |
 | ~~1~~ | ~~相对布局（row / column + `BoxConstraints`）~~ | ✅ 已做：尺寸提示 / `flex` / 间距 / 对齐 + 绝对子树平移；见 [布局](layout.md) |
-| **1** | 通用约束传播（两遍 Measure/Arrange、自动换行、滚动容器接入） | 目前是帧式布局，容器必须有明确盒；自动换行、按内容撑开窗口还没有 |
+| ~~3~~ | ~~通用约束传播（两遍 Measure/Arrange）~~ | ✅ 已做：约束下落、`kAuto` 按内容撑开、文本自动换行；见 [布局](layout.md) |
+| **1** | 滚动容器接入相对布局 | `scrollView` / `listView` 仍要显式视口盒，滚动几何依赖它 |
 | 2 | `Popup` / `Menu` / `Tooltip` | 需要独立图层与焦点捕获，是目前唯一还缺的 L1 |
 | 3 | 其余 L2 ：`Badge` `Toolbar` `Spinner` `Breadcrumb` | 体力活 |
 | 4 | TextInput 升级为 L1：光标 / 选区搬到 Element，加 IME | 工程量大的一块 |

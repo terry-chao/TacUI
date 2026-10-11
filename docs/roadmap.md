@@ -18,9 +18,10 @@
 | **M6 多语言铺开** | C# / TS / Swift / Kotlin | 全部通过 parity test |
 
 **进度：** M0 已完成；M2 的输入系统、主题令牌、12 个 L2 控件、`ScrollView` /
-`ListView` 与**相对布局（row / column）**已落地（见 [布局](layout.md)）。
-M2 仍缺通用约束布局与动画系统；M1 的**统一 draw list 已完成**（paint 按树序
-交错提交，`controls_gallery --paint-test` 验证），解析 AA 贝塞尔与 HarfBuzz / ICU 尚未做。
+`ListView` 与**两遍布局（measure / arrange）**已落地：相对容器、按内容撑开、
+文本自动换行都通了（见 [布局](layout.md)）。M2 仍缺动画系统与 `Popup` 那片；
+M1 的**统一 draw list 已完成**（paint 按树序交错提交，`controls_gallery --paint-test`
+验证），解析 AA 贝塞尔与 HarfBuzz / ICU 尚未做。
 M4 的 Python 绑定已推进到**控件层**：L2 控件经 C ABI 导出，宿主用同一套控件，
 并能注入事件做无窗口验证（见 [C ABI 与 Python 绑定](python.md)）。
 
