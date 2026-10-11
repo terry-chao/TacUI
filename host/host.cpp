@@ -239,6 +239,11 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
             reqW = w;
             reqH = h;
         }
+        // The renderer parks between size requests while a drag is in flight
+        // (see the render loop), so publishing the size is also what has to
+        // wake it.
+        appliedCv.notify_all();
+
         // Wait for the renderer only while the user is dragging: that is when
         // the window is changing continuously and a buffer one size behind is
         // visible. A programmatic resize can lag harmlessly.
@@ -286,6 +291,29 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
                 w        = reqW;
                 h        = reqH;
                 resizing = (w != appW || h != appH);
+            }
+
+            // While the user is dragging the window, the UI thread drives this
+            // loop: it publishes a size and then blocks in the window procedure
+            // until the swapchain has caught up. Rendering freely in between is
+            // what burns the frame that is still on the flip queue, and the
+            // next ResizeBuffers/waitForGpu then has to wait for the compositor
+            // to hand that buffer back — a multi-millisecond stall that lands
+            // *inside* Windows' modal sizing loop, which is exactly what reads
+            // as jitter while dragging. So park here between size requests.
+            //
+            // This costs nothing visually: the drag has the UI thread blocked
+            // inside the modal loop, so neither the app's frame callback nor
+            // update() is running and the content cannot change.
+            if (inDrag.load(std::memory_order_relaxed) && !resizing &&
+                !captureRequested.load(std::memory_order_relaxed)) {
+                std::unique_lock<std::mutex> lock(sizeMutex);
+                appliedCv.wait_for(lock, std::chrono::milliseconds(5), [&] {
+                    return reqW != appW || reqH != appH ||
+                           !inDrag.load(std::memory_order_relaxed) ||
+                           !running.load(std::memory_order_relaxed);
+                });
+                continue;
             }
 
             if (resizing) device->resize(w, h);
@@ -383,6 +411,7 @@ int run(ui::Ui& ui, const Options& opts, const FrameFn& frame, const EventFn& ev
 
     running.store(false);
     frameCv.notify_all();
+    appliedCv.notify_all();   // the renderer may be parked for the next size
     if (renderThread.joinable()) renderThread.join();
 
     // Deliberately no ui.shutdown() here: the caller may still want to inspect
