@@ -127,6 +127,8 @@ opts.height = 720;
 
 ## 接着读
 
+- [渲染管线](rendering.md) —— 这一棵树最终怎么变成像素
+- [框架实现](framework.md) —— rebuild / reconcile / layout / 输入的全过程
 - [两条变更通道](two-paths.md) —— override、token 与生效值规则
 - [布局](layout.md) —— row / column、尺寸提示与绝对子树平移
 - [组件设计](components.md) —— 在写控件之前的输入系统与主题令牌

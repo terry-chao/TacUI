@@ -212,6 +212,11 @@ lives at the level of a single property, not the whole framework.
 - [docs/plan.md](docs/plan.md) — decisions and milestones; §6.1 is current status
 - [docs/architecture.md](docs/architecture.md) — the reasoning, including why
   this is not WPF's model, what GacUI got right, and what WinUI accidentally proved
+- [docs/rendering.md](docs/rendering.md) — how a frame is actually drawn: batching,
+  analytic SDF AA, the glyph atlas, clip-per-primitive, DPI, capture
+- [docs/framework.md](docs/framework.md) — reconcile, the one-level override channel,
+  frame-based layout, hit chain and bubbling
+- [docs/gotchas.md](docs/gotchas.md) — the hard-won lessons, symptom → cause → rule
 
 ```
 include/tacui/   the public API — tacui.hpp (C++) and tacui.h (C ABI)

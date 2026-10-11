@@ -86,6 +86,7 @@ M0 的第 3、4 条验收标准直接盯着这条路：
 
 ## 接着读
 
+- [框架实现](framework.md) —— override 的代码形态：一层 token、代际校验、API 形状守边界
 - [架构](architecture.md) §14 —— 完整分层、数据结构与优先级规则
 - [方案](plan.md) D4 —— base / override 双通道的决策记录
 - [写一个 UI](building-ui.md) —— 代码里的两条路径

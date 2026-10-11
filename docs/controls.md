@@ -9,8 +9,6 @@
 > 用的是**同一套**控件；`TextInput` / `ScrollView` / `ListView` 的跨帧状态由库按 key
 > 托管，宿主经访问器读写。见 [C ABI 与 Python 绑定](python.md)。
 
-![控件总览](img/controls.png)
-
 截图就是 `controls_gallery --capture` 的输出，可以直接当回归基准。
 
 ---
@@ -195,3 +193,9 @@ ui.setTheme(ui::lightTheme());
 | 4 | TextInput 升级为 L1：光标 / 选区搬到 Element，加 IME | 工程量大的一块 |
 
 详见 [组件设计](components.md) §6。
+
+## 接着读
+
+- [框架实现](framework.md) —— 命中链、冒泡、焦点、捕获的代码规则
+- [渲染管线](rendering.md) —— 控件画出来之后的批处理、clip、字形路径
+- [踩坑与注意事项](gotchas.md) §五 —— 控件里三条「命中盒 = 视觉盒」的约定

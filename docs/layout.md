@@ -134,3 +134,8 @@ ui::button(b, kCancel, { 0, 0, 96, 32 }, { .label = "Cancel" });
 [PASS] a bare text node takes its measured width
 [PASS] hit testing uses the laid-out position, not the authored one
 ```
+
+## 接着读
+
+- [框架实现](framework.md) —— 布局在 `update()` 里的位置、`translateSubtree` 为什么不用重新 shape
+- [组件设计](components.md) §6 —— 通用约束传播（Measure/Arrange）为什么排在相对布局之后

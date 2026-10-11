@@ -2,8 +2,6 @@
 
 > Tessellated Accelerated Composition Library
 
-![TacUI 展示图（玻璃 + 速度线 + 光晕 + 组合）](img/brand-hero.png)
-
 ---
 
 ## 标志：图形承担 "Tac"，字标承担 "UI"

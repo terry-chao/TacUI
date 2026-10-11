@@ -190,11 +190,13 @@ body.homepage > .container {
   position: relative;
   display: block;
   width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
   height: auto;
-  box-shadow: 0 48px 90px -46px rgba(0, 0, 0, .95);
+  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, .55));
 }
 
-/* 截图本身是个按钮：点开进全屏灯箱（逻辑在 docs/js/site.js） */
+/* 主图本身是个按钮：点开进全屏灯箱（逻辑在 docs/js/site.js） */
 
 .tm-hero-shot-btn {
   position: relative;

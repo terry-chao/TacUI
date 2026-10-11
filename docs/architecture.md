@@ -2,6 +2,9 @@
 
 > GPU 加速 / Retained Mode / C++ 核心 / 多语言声明式 DSL 的 UI 库
 > 参考 GacUI 的控件与组合思想，但放弃 XML + 脚本资源，改用各宿主语言原生的代码式声明 UI
+>
+> 本文是**推理论证**。「这些结论翻译成了什么代码」在[渲染管线](rendering.md)与
+> [框架实现](framework.md)，实际踩到的坑在[踩坑与注意事项](gotchas.md)。
 
 ---
 

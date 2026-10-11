@@ -61,6 +61,10 @@ nav:
       - 嵌入与对接: integration.md
   - 组件:
       - 组件设计（分层依据）: components.md
+  - 实现:
+      - 渲染管线: rendering.md
+      - 框架实现: framework.md
+      - 踩坑与注意事项: gotchas.md
   - 参考:
       - C ABI 与 Python 绑定: python.md
       - 品牌与资源: brand.md

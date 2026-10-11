@@ -42,8 +42,6 @@ C++   拥有窗口、GPU 设备、帧循环          (tui_run)
 Python 拥有 UI：build 回调、事件处理、动画
 ```
 
-![Python 宿主驱动的 TacUI 窗口](img/app-shot-python.png)
-
 ---
 
 ## 跑一下

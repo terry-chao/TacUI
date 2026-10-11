@@ -35,6 +35,8 @@ GPU 加速 · **retained mode** · C++ 核心 · 多语言**原生声明式** UI
 | **原生声明式 DSL** | 各语言用自身惯用法表达同一棵树，用 parity test 保证语义一致 | [方案](plan.md) |
 | **可嵌入的 core** | core 无宿主语言依赖；已有窗口与渲染器的应用自行驱动 `update()` / `paint()` | [写一个 UI](building-ui.md) |
 | **组件与主题** | 先做 core 输入系统（命中 / 路由 / 焦点 / 捕获），组件放 core，主题走令牌 | [组件设计](components.md) |
+| **渲染管线** | 两条 instanced 管线、解析 SDF AA、R8 字形图集、逐图元 clip、树序绘制 | [渲染管线](rendering.md) |
+| **框架实现** | arena 重建、reconcile 只写 base、一层 override、帧式布局、命中链冒泡 | [框架实现](framework.md) |
 
 ## 先读这几篇定坐标
 
@@ -42,6 +44,9 @@ GPU 加速 · **retained mode** · C++ 核心 · 多语言**原生声明式** UI
 - [方案（决策清单）](plan.md) —— D1–D12 锁定决策、里程碑、开放问题与止损点
 - [架构](architecture.md) —— 三棵树、渲染、绑定、DSL 统一问题、范式取舍
 - [路线图与里程碑](roadmap.md) —— M0–M6 与 M0 的六条验收标准
+
+想看**代码现在怎么跑**，读 [渲染管线](rendering.md)、[框架实现](framework.md)
+与[踩坑与注意事项](gotchas.md) —— 三篇写的是已落地实现，不是计划。
 
 ## 跑起来
 

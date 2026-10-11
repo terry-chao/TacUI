@@ -2,6 +2,9 @@
 
 > 本文件是**决策与执行方案**。推理论证过程见 [architecture.md](architecture.md)，本文件只给结论。
 > 状态：v1 草案，待拍板项见 §8
+>
+> 已落地的实现写在[渲染管线](rendering.md)、[框架实现](framework.md)与
+> [踩坑与注意事项](gotchas.md)；§6.1 的缺陷清单在 gotchas.md 里展开成可查的条目。
 
 ---
 
