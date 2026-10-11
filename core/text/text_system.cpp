@@ -414,6 +414,108 @@ bool TextSystem::shape(const char* utf8, float sizePx, ShapedLine& out) const {
     return true;
 }
 
+namespace {
+
+// Whitespace the breaker may consume when it ends a line.
+bool isSpaceCp(uint32_t cp) {
+    return cp == ' ' || cp == '\t' || cp == 0x3000;   // incl. ideographic space
+}
+
+// A codepoint after which a line may break without a space. CJK scripts break
+// between characters by convention, and the codepoint -> glyph mapping here is
+// 1:1, so a break between two glyphs is a break inside a word that Latin text
+// would rather keep, and inside a run that CJK text expects to be split.
+bool isBreakOpportunity(uint32_t cp) {
+    if (isSpaceCp(cp)) return true;
+    if (cp >= 0x3040 && cp <= 0x30FF) return true;   // kana
+    if (cp >= 0x3400 && cp <= 0x9FFF) return true;   // CJK ideographs
+    if (cp >= 0xF900 && cp <= 0xFAFF) return true;   // compatibility ideographs
+    if (cp >= 0xFF00 && cp <= 0xFF60) return true;   // fullwidth forms
+    return false;
+}
+
+} // namespace
+
+bool TextSystem::shapeBlock(const char* utf8, float sizePx, float maxWidth,
+                            ShapedBlock& out) const {
+    out = ShapedBlock{};
+    out.ascent     = ascent(sizePx);
+    out.descent    = descent(sizePx);
+    out.lineHeight = lineHeight(sizePx);
+    if (!utf8 || !*utf8) return true;   // empty block, not an error
+
+    ShapedLine whole;
+    if (!shape(utf8, sizePx, whole)) return false;
+
+    // Wrapping indexes the line breaker by codepoint, and the shaper maps one
+    // codepoint to one glyph (its documented limitation), so the shaped glyph
+    // list can be split directly. If that ever stops holding — HarfBuzz lands
+    // in M1 — fall back to one line rather than mis-splitting a run.
+    const std::vector<UINT32> cp = utf16ToUtf32(utf8ToWide(utf8));
+
+    if (maxWidth <= 0.0f || cp.size() != whole.glyphs.size()) {
+        out.width = whole.width;
+        out.lines.push_back(std::move(whole));
+        return true;
+    }
+
+    const size_t n = whole.glyphs.size();
+
+    // Emits [from, to) as one line, rebasing each glyph on the line's own
+    // origin and dropping the spaces the break consumed.
+    auto emitLine = [&](size_t from, size_t to) {
+        while (to > from && isSpaceCp(cp[to - 1])) --to;
+
+        ShapedLine line;
+        line.glyphs.reserve(to - from);
+        const float origin = whole.glyphs[from].x;
+        for (size_t i = from; i < to; ++i) {
+            Glyph g = whole.glyphs[i];
+            g.x -= origin;
+            line.width = g.x + g.advance;
+            line.glyphs.push_back(g);
+        }
+        if (line.glyphs.empty()) line.width = 0.0f;
+
+        if (line.width > out.width) out.width = line.width;
+        out.lines.push_back(std::move(line));
+    };
+
+    size_t lineStart = 0;
+    size_t breakAt   = 0;
+    bool   haveBreak = false;
+
+    for (size_t i = 0; i < n; ++i) {
+        const uint32_t c = cp[i];
+        if (c == '\n') {                       // hard break, always
+            emitLine(lineStart, i);
+            lineStart = i + 1;
+            haveBreak = false;
+            continue;
+        }
+
+        const Glyph& g     = whole.glyphs[i];
+        const float  right = g.x + g.advance - whole.glyphs[lineStart].x;
+        if (right > maxWidth && i > lineStart) {
+            // Break at the last opportunity that fits; if there is none, split
+            // inside the word (this is what makes long tokens not overflow).
+            const size_t brk = (haveBreak && breakAt > lineStart) ? breakAt : i;
+            emitLine(lineStart, brk);
+            lineStart = brk;
+            haveBreak = false;
+            // Glyphs before `i` and after `brk` were already checked against a
+            // *wider* origin, so they still fit on the new line.
+        }
+
+        if (isBreakOpportunity(c)) {
+            haveBreak = true;
+            breakAt   = i + 1;
+        }
+    }
+    if (lineStart < n) emitLine(lineStart, n);
+    return true;
+}
+
 bool TextSystem::rasterize(uint16_t face, uint16_t glyphIndex, float sizePx,
                            GlyphBitmap& out) const {
     out.alpha.clear();

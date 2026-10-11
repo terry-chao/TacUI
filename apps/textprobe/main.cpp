@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include <tacui/tacui.hpp>
 
@@ -72,6 +73,104 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::printf("CJK: %zu glyphs, none .notdef\n\n", line.glyphs.size());
+    }
+
+    // ---- wrapping ---------------------------------------------------------
+    //
+    // The breaker works off the shaped advances, so it is verifiable with no
+    // window and no GPU: every line must fit the width it was offered, no glyph
+    // may be lost, and the block height must follow from the line count. CJK
+    // and Latin differ here (character breaks vs. word breaks) and both run
+    // through the same loop, so the same three assertions cover both.
+    {
+        std::string longText;
+        for (int i = 0; i < 3; ++i) {
+            if (i) longText += " ";
+            longText += sample;
+        }
+
+        tac::text::ShapedLine raw;
+        if (!text.shape(longText.c_str(), sizePx, raw)) {
+            std::fprintf(stderr, "FAIL: shape(long text)\n");
+            return 1;
+        }
+
+        // Narrower than the raw run, so a wrap is mandatory — and deliberately
+        // not a neat fraction of it, so the greedy breaker has to make real
+        // choices rather than landing on equal lines.
+        const float maxWidth = raw.width * 0.43f;
+
+        tac::text::ShapedBlock block;
+        if (!text.shapeBlock(longText.c_str(), sizePx, maxWidth, block)) {
+            std::fprintf(stderr, "FAIL: shapeBlock\n");
+            return 1;
+        }
+
+        std::printf("\nwrapping to %.2fpx (raw %.2fpx): %zu lines\n",
+                    maxWidth, raw.width, block.lines.size());
+
+        size_t kept = 0;
+        int    over = 0;
+        int    bad  = 0;
+        for (size_t i = 0; i < block.lines.size(); ++i) {
+            const tac::text::ShapedLine& l = block.lines[i];
+            std::printf("  line %zu: %zu glyphs, width=%.2f\n", i, l.glyphs.size(), l.width);
+            kept += l.glyphs.size();
+            // A single glyph wider than the line is the documented overflow
+            // case (it is never split); anything else must fit.
+            if (l.width > maxWidth + 0.01f && l.glyphs.size() > 1) ++over;
+            if (!l.glyphs.empty()) {
+                if (l.glyphs.front().x < -0.001f) ++bad;   // not rebased on the line
+                const auto& last = l.glyphs.back();
+                if (std::fabs((last.x + last.advance) - l.width) > 0.01f) ++bad;
+            }
+        }
+
+        const float expectHeight =
+            text.ascent(sizePx) + text.descent(sizePx) +
+            text.lineHeight(sizePx) * static_cast<float>(block.lines.size() - 1);
+
+        int failures = 0;
+        auto fail = [&failures](const char* what) {
+            std::fprintf(stderr, "FAIL: %s\n", what);
+            ++failures;
+        };
+        if (block.lines.size() < 2) fail("text wider than the line did not wrap");
+        if (over) fail("a line exceeded the wrap width");
+        if (bad) fail("a line is not rebased on its own origin");
+        // Breaks swallow the spaces they land on, so a few glyphs may go; a
+        // line's worth per line is the most that can disappear.
+        if (kept > raw.glyphs.size() ||
+            kept + block.lines.size() < raw.glyphs.size()) {
+            fail("wrapping lost glyphs");
+        }
+        if (std::fabs(block.height() - expectHeight) > 0.01f) {
+            fail("block height does not follow from the line count");
+        }
+        if (block.width > maxWidth + 0.01f) fail("block width exceeds the wrap width");
+        if (failures) return 1;
+
+        std::printf("wrap OK: %zu/%zu glyphs kept, height=%.2f, width=%.2f\n",
+                    kept, raw.glyphs.size(), block.height(), block.width);
+
+        // A token with no break opportunity at all: the breaker has to split
+        // inside it, or it would overflow the container it was measured for.
+        tac::text::ShapedLine  token;
+        tac::text::ShapedBlock tokenBlock;
+        const char*            tokenText = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        if (!text.shape(tokenText, sizePx, token) ||
+            !text.shapeBlock(tokenText, sizePx, token.width * 0.5f, tokenBlock)) {
+            std::fprintf(stderr, "FAIL: shapeBlock(no-space token)\n");
+            return 1;
+        }
+        for (const auto& l : tokenBlock.lines) {
+            if (l.width > token.width * 0.5f + 0.01f && l.glyphs.size() > 1) {
+                std::fprintf(stderr, "FAIL: an unbreakable token overflowed\n");
+                return 1;
+            }
+        }
+        std::printf("wrap OK: unbreakable token split into %zu lines\n",
+                    tokenBlock.lines.size());
     }
 
     // Rasterise one glyph per distinct index and prove the ink is real.

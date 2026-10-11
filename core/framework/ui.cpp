@@ -190,7 +190,7 @@ bool Ui::update() {
     // Layout runs after reconcile because it needs shaped text to know an
     // intrinsic size, and reconcile is what shapes. Absolute subtrees are left
     // untouched, so a tree with no relative container is unchanged.
-    layoutTree(*root_, ctx);
+    layoutTree(*root_, ctx, &rs);
 
     // Focus survives rebuilds while the node does; clear it only if the node
     // was removed.

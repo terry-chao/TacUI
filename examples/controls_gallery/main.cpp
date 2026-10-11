@@ -344,6 +344,10 @@ constexpr ui::Key kPanel      = 941, kPanelLabel = 942;
 constexpr ui::Key kRawText    = 961;
 constexpr ui::Key kButton     = 981;
 
+constexpr ui::Key kAutoCol  = 990, kAutoA = 991, kAutoB = 992;
+constexpr ui::Key kAutoRow  = 1000, kAutoR1 = 1001, kAutoR2 = 1002;
+constexpr ui::Key kWrapCol  = 1010, kWrapText = 1011, kWrapAfter = 1012;
+
 int buttonClicks = 0;
 
 ui::VNode* build(ui::Builder& b) {
@@ -395,6 +399,35 @@ ui::VNode* build(ui::Builder& b) {
         ui::button(b, kButton, { 1200.0f, 800.0f, 120.0f, 32.0f },
                    { .label = "Placed" },
                    [] { ++buttonClicks; });
+    }
+
+    // An auto-framed column: no box to author, the frame is what the children
+    // add up to. `kAuto` on a frame axis is the whole difference.
+    {
+        auto col = b.column({ 0.0f, 700.0f, ui::kAuto, ui::kAuto },
+                            { .gap = 6.0f }, kAutoCol);
+        b.rect().width(80.0f).height(20.0f).key(kAutoA).color(ui::rgb(120, 180, 240));
+        b.rect().width(40.0f).height(30.0f).key(kAutoB).color(ui::rgb(120, 180, 240));
+    }
+
+    // Same for a row: children run left to right and the row's width is their
+    // sum plus the gaps.
+    {
+        auto row = b.row({ 0.0f, 800.0f, ui::kAuto, ui::kAuto },
+                         { .gap = 8.0f }, kAutoRow);
+        b.rect().width(50.0f).height(20.0f).key(kAutoR1).color(ui::rgb(240, 180, 120));
+        b.rect().width(30.0f).height(20.0f).key(kAutoR2).color(ui::rgb(240, 180, 120));
+    }
+
+    // A long text in a fixed-width column: the measured size now depends on the
+    // constraint, so the node wraps and the sibling below moves by the wrapped
+    // height rather than the single-line one.
+    {
+        auto col = b.column({ 400.0f, 700.0f, 120.0f, ui::kAuto },
+                            { .gap = 4.0f }, kWrapCol);
+        b.text("wrap me onto several lines please").size(16.0f).key(kWrapText)
+            .color(ui::rgb(230, 230, 240));
+        b.rect().width(20.0f).height(10.0f).key(kWrapAfter).color(ui::rgb(200, 120, 200));
     }
 
     return b.root();
@@ -480,6 +513,32 @@ int runLayoutTest() {
         ui.update();
         check(lay::buttonClicks == 1,
               "hit testing uses the laid-out position, not the authored one");
+    }
+
+    // --- an auto frame sizes the container to its content -----------------
+    {
+        const Rect a1 = box(lay::kAutoA);
+        const Rect a2 = box(lay::kAutoB);
+        check(near(a1.x, 0.0f) && near(a1.y, 700.0f) &&
+              near(a2.x, 0.0f) && near(a2.y, 726.0f),
+              "an auto-framed column stacks from its own origin");
+
+        const Rect r1 = box(lay::kAutoR1);
+        const Rect r2 = box(lay::kAutoR2);
+        check(near(r1.x, 0.0f) && near(r1.y, 800.0f) && near(r2.x, 58.0f),
+              "an auto-framed row advances by child width + gap");
+    }
+
+    // --- a constrained child measures differently: text wraps -------------
+    {
+        const Rect  t     = box(lay::kWrapText);
+        const Rect  after = box(lay::kWrapAfter);
+        const float oneLine = ui.textAscent(16.0f) + ui.textDescent(16.0f);
+        check(t.w > 0.0f && t.w <= 120.0f + 0.5f,
+              "wrapped text stays inside the width it was offered");
+        check(t.h > oneLine + 1.0f, "wrapped text is taller than a single line");
+        check(near(after.y, t.y + t.h + 4.0f),
+              "the sibling below moves by the wrapped height");
     }
 
     std::printf("--- %s ---\n", ok ? "ALL PASS" : "FAILURES PRESENT");

@@ -41,14 +41,21 @@ struct RenderObject {
     float cornerRadius = 0.0f;
     Color baseColor;
 
-    // Text nodes. `shaped` and `placed` are derived from `text`/`fontSize` and
-    // are rebuilt only when those change.
-    std::string         text;
-    float               fontSize = 0.0f;
+    // Text nodes. `block` and `placed` are derived from `text`/`fontSize` plus
+    // the width the node was laid out against, and are rebuilt only when one of
+    // those changes.
+    std::string              text;
+    float                    fontSize = 0.0f;
     // DPI scale the glyphs were rasterised at, so a scale change (the window
     // moving to another monitor) re-shapes rather than reusing stale bitmaps.
-    float               rasterScale = 1.0f;
-    text::ShapedLine    shaped;
+    float                    rasterScale = 1.0f;
+    // The wrap width `block` was shaped against, in logical units (0 = no
+    // wrapping). Together with the fields above this is the shaping cache key —
+    // layout may ask for a different width than reconcile did, and re-shaping
+    // every time it does would put text work back in the frame loop.
+    float                    wrapWidth = 0.0f;
+    bool                     blockReady = false;
+    text::ShapedBlock        block;
     std::vector<PlacedGlyph> placed;
 
     // Override channel — written by direct write, never by reconcile.
@@ -205,12 +212,18 @@ struct ReconcileCtx {
 // list reordering land in M2 (plan.md §6).
 void reconcile(Element& e, const VNode& v, ReconcileStats& stats, ReconcileCtx& ctx);
 
-// Runs the layout pass. Absolute subtrees are left exactly as they were; a
-// relative container (row / column) arranges its children inside its frame,
-// and an absolute subtree placed by a relative parent is translated as a whole.
-// Called from Ui::update() after reconcile, because it needs shaped text to
-// know a label's intrinsic size.
-void layoutTree(Element& root, ReconcileCtx& ctx);
+// Runs the layout pass: measure under constraints, then arrange into slots.
+//
+// Absolute subtrees are left exactly as they were; a relative container
+// (row / column) arranges its children inside its frame, and an absolute
+// subtree placed by a relative parent is translated as a whole. A container
+// whose frame axis is `kAuto` (or non-positive) sizes to its content, so a
+// row / column no longer needs an explicit box.
+//
+// Called from Ui::update() after reconcile, because a child's measured size
+// depends on shaped text — which is why the text cache is keyed on the wrap
+// width here and not only on the string.
+void layoutTree(Element& root, ReconcileCtx& ctx, ReconcileStats* stats = nullptr);
 
 // Depth-first key lookup, used to hand out NodeRefs. M1 replaces this with an
 // id -> element map maintained during reconcile.
